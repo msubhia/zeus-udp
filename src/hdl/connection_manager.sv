@@ -49,19 +49,22 @@ module connection_manager #(
     assign fw_hash = xor32to16(s00_axis_fw_lookup_key);
 
     // Pipeline key/hash/valid for BRAM read latency
-    logic [1:0][KEY_WIDTH-1:0]      fw_key_pipe;
-    logic [1:0][HASH_WIDTH-1:0]     fw_hash_pipe;
-    logic [1:0]                     fw_valid_pipe;
+    logic [2:0][KEY_WIDTH-1:0]      fw_key_pipe;
+    logic [2:0][HASH_WIDTH-1:0]     fw_hash_pipe;
+    logic [2:0]                     fw_valid_pipe;
 
     always_ff @(posedge clk) begin
         fw_key_pipe[0]  <= s00_axis_fw_lookup_key;
         fw_key_pipe[1]  <= fw_key_pipe[0];
+        fw_key_pipe[2]  <= fw_key_pipe[1];
 
         fw_hash_pipe[0] <= fw_hash;
         fw_hash_pipe[1] <= fw_hash_pipe[0];
+        fw_hash_pipe[2] <= fw_hash_pipe[1];
 
         fw_valid_pipe[0] <= s00_axis_fw_lookup_valid;
         fw_valid_pipe[1] <= fw_valid_pipe[0];
+        fw_valid_pipe[2] <= fw_valid_pipe[1];
     end
 
     // -------------------------------------------------------------------------
@@ -132,16 +135,16 @@ module connection_manager #(
     // Lookup logic
     // -------------------------------------------------------------------------
     assign s00_axis_fw_lookup_ready = 1'b1;
-    assign m00_axis_fw_lookup_valid = fw_valid_pipe[1];
+    assign m00_axis_fw_lookup_valid = fw_valid_pipe[2];
 
     always_comb begin
         m00_axis_fw_lookup_hit  = 1'b0;
         m00_axis_fw_lookup_resp = '0;
 
         for (int w = 0; w < WAYS; w++) begin
-            if (fw_valid[w] && fw_tag[w] == fw_key_pipe[1]) begin
+            if (fw_valid[w] && fw_tag[w] == fw_key_pipe[2]) begin
                 m00_axis_fw_lookup_hit = 1'b1;
-                m00_axis_fw_lookup_resp = { w[WAYS_LOG-1:0], fw_hash_pipe[1] };
+                m00_axis_fw_lookup_resp = { w[WAYS_LOG-1:0], fw_hash_pipe[2] };
             end
         end
     end

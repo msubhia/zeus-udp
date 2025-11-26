@@ -50,8 +50,8 @@ module dual_port_bram #(
         .RAM_DECOMP("auto"),            
         .READ_DATA_WIDTH_A(DATA_WIDTH),         
         .READ_DATA_WIDTH_B(DATA_WIDTH),         
-        .READ_LATENCY_A(2),             
-        .READ_LATENCY_B(2),             
+        .READ_LATENCY_A(3),             
+        .READ_LATENCY_B(3),             
         .READ_RESET_VALUE_A("0"),       
         .READ_RESET_VALUE_B("0"),       
         .RST_MODE_A("SYNC"),            
@@ -63,8 +63,8 @@ module dual_port_bram #(
         .WAKEUP_TIME("disable_sleep"),  
         .WRITE_DATA_WIDTH_A(DATA_WIDTH),        
         .WRITE_DATA_WIDTH_B(DATA_WIDTH),        
-        .WRITE_MODE_A("no_change"),     
-        .WRITE_MODE_B("no_change"),     
+        .WRITE_MODE_A("read_first"),     
+        .WRITE_MODE_B("read_first"),     
         .WRITE_PROTECT(1)               
     )
     xpm_memory_tdpram_inst (
