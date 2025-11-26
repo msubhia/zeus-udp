@@ -15,7 +15,8 @@ from pathlib                import Path
 from cocotb.clock           import Clock
 from cocotb.triggers        import Timer, ClockCycles, RisingEdge, FallingEdge, ReadOnly, with_timeout
 from cocotb.utils           import get_sim_time as gst
-from cocotb.runner          import get_runner
+#from cocotb.runner          import get_runner
+from vicoco.vivado_runner import get_runner
 from cocotb_bus.bus         import Bus
 from cocotb_bus.drivers     import BusDriver
 from cocotb_bus.monitors    import Monitor
@@ -209,6 +210,7 @@ def connection_manager_model_rd(val):
     key = val
     hash_key = xor32to16(key)
 
+    print({"key": key, "hash_key": hex(hash_key)})
     rd_sig_in.append({"key": key, "hash_key": hash_key})
 
     expected = {"hit": 0, "resp": 0}
@@ -232,28 +234,29 @@ def connection_manager_model_wr(val):
     hash_key = xor32to16(key)
 
     wr_sig_in.append({"key": key, "hash_key": hash_key, "activate": activate})
+    print({"key": key, "hash_key": hex(hash_key), "activate": activate})
 
-    if activate:  # delete
-        expected = {"ack": 0, "full": 0}
+    expected = {"ack": 0, "full": 0}
+
+    if not activate:  # delete
+
         for w in range(WAYS):
             if my_hash_table_tags[w][hash_key] == key:
                 my_hash_table_vlds[w][hash_key] = 0
                 my_hash_table_tags[w][hash_key] = 0
                 expected = {"ack": 1, "full": 0}
-                break
+
+        expected = {"ack": 1, "full": 0}
 
     else:  # insert
-        inserted = False
+
         for w in range(WAYS):
             if my_hash_table_vlds[w][hash_key] == 0:
                 my_hash_table_vlds[w][hash_key] = 1
                 my_hash_table_tags[w][hash_key] = key
                 expected = {"ack": 1, "full": 0}
-                inserted = True
                 break
-
-        if not inserted:
-            expected = {"ack": 1, "full": 1}
+        expected = {"ack": 1, "full": 1}
 
     wr_sig_out_exp.append(expected)
 
@@ -277,6 +280,7 @@ async def reset(clk,rst, cycles_held = 3,polarity=1):
 @cocotb.test()
 async def test_a(dut):
 
+
     rd_in_monitor       = AXIS_Monitor(dut,'s00',dut.s00_axis_aclk,callback = connection_manager_model_rd)
     rd_out_monitor      = AXIS_Monitor(dut,'m00',dut.s00_axis_aclk,callback = lambda x: appending_values_rd(x))
 
@@ -290,7 +294,10 @@ async def test_a(dut):
     wr_out_driver       = S_AXIS_Driver(dut,'m02',dut.s00_axis_aclk)
 
 
-    NUM_OPERATIONS      = 10000
+    cocotb.start_soon(Clock(dut.s00_axis_aclk, 10, units = "ns").start())
+    await reset(dut.s00_axis_aclk, dut.s00_axis_aresetn,2,0)
+
+    NUM_OPERATIONS      = 100
     for _ in range(NUM_OPERATIONS):
         is_rd   = random.random() < 0.9
         key     = random.getrandbits(32)
@@ -306,10 +313,10 @@ async def test_a(dut):
             wr_in_driver.append({"type":"pause","duration":random.randint(1,6)})
 
 
-    rd_out_driver.append({'type':'read', "duration":1100})
-    wr_out_driver.append({'type':'read', "duration":1100})
+    rd_out_driver.append({'type':'read', "duration":NUM_OPERATIONS*20})
+    wr_out_driver.append({'type':'read', "duration":NUM_OPERATIONS*20})
 
-    await ClockCycles(dut.s00_axis_aclk, NUM_OPERATIONS + 1000)
+    await ClockCycles(dut.s00_axis_aclk, NUM_OPERATIONS + 10000)
 
     assert rd_in_monitor.transactions==rd_out_monitor.transactions, f"Transaction Count doesn't match! :-/"
     assert wr_in_monitor.transactions==wr_out_monitor.transactions, f"Transaction Count doesn't match! :-/"
@@ -341,7 +348,8 @@ async def test_a(dut):
 def connection_manager_tb_runner():
 
     hdl_toplevel_lang   = os.getenv("HDL_TOPLEVEL_LANG", "verilog")
-    sim                 = os.getenv("SIM", "icarus")
+    #sim                 = os.getenv("SIM", "icarus")
+    sim                 = os.getenv("SIM", "vivado")
     proj_path           = Path(__file__).resolve().parent.parent
     sys.path.append(str(proj_path / "sim" / "model"))
     sys.path.append(str(proj_path / "hdl" ))

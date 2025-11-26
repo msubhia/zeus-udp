@@ -1,9 +1,10 @@
 `default_nettype none
+`timescale 1ns/1ps
 
 module dual_port_bram #(
     parameter int DATA_WIDTH,
     parameter int DATA_DEPTH,
-    parameter int MEMORY_PRIMITIVE = "auto", 
+    parameter MEMORY_PRIMITIVE = "auto", 
     parameter int ADDR_WIDTH = $clog2(DATA_DEPTH)
 ) (
     // write port a
@@ -12,8 +13,8 @@ module dual_port_bram #(
     input wire ena,
     input wire wea,
     input wire [ADDR_WIDTH-1:0] addra,
-    input wire [DATA_WIDTH-1] dina,
-    output logic [DATA_WIDTH-1] douta,
+    input wire [DATA_WIDTH-1:0] dina,
+    output logic [DATA_WIDTH-1:0] douta,
 
     // read port b
     input wire clkb,
@@ -21,8 +22,8 @@ module dual_port_bram #(
     input wire enb,
     input wire web,
     input wire [ADDR_WIDTH-1:0] addrb,
-    input wire [DATA_WIDTH-1] dinb,
-    output logic [DATA_WIDTH-1] doutb,
+    input wire [DATA_WIDTH-1:0] dinb,
+    output logic [DATA_WIDTH-1:0] doutb
 );
 
     // xpm_memory_tdpram: True Dual Port RAM

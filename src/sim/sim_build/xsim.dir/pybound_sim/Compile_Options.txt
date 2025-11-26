@@ -1,0 +1,1 @@
+-top "connection_manager_wrapper" -snapshot "pybound_sim" "work.cocotb_vivado_dump" -L "secureip" -L "xpm" -dll -debug "wave" 
