@@ -154,6 +154,7 @@ module connection_manager #(
     typedef enum logic [1:0] {
         STATE_IDLE,
         STATE_READ,
+        STATE_ACTIVATE_CHECK,
         STATE_ACTIVATE,
         STATE_DEACTIVATE
     } state_t;
@@ -210,7 +211,7 @@ module connection_manager #(
                 STATE_READ: begin
                     read_wait <= read_wait + 1;
                     if (read_wait == 4) begin
-                        state <= ctrl_act_q ? STATE_ACTIVATE : STATE_DEACTIVATE;
+                        state <= ctrl_act_q ? STATE_ACTIVATE_CHECK : STATE_DEACTIVATE;
                     end  
                 end
 
@@ -226,6 +227,26 @@ module connection_manager #(
                     m02_axis_ctrl_valid <= 1'b1;
                     m02_axis_ctrl_ack   <= 1'b1;
                     state               <= STATE_IDLE;
+                end
+
+                STATE_ACTIVATE_CHECK: begin
+
+                    logic local_is_any;
+                    local_is_any = 1'b0;
+                    for (int i=0; i<WAYS; i++) begin
+                        if (ctrl_dout_tag[i] == ctrl_key_q && ctrl_dout_valid[i]) begin
+                            local_is_any = 1'b1;
+                        end
+                    end
+
+                    if (local_is_any) begin
+                        m02_axis_ctrl_valid <= 1'b1;
+                        m02_axis_ctrl_ack   <= 1'b1;
+                        state               <= STATE_IDLE;
+                    end else begin
+                        state               <= STATE_ACTIVATE;
+                    end
+
                 end
 
                 // -------------------------------------------------------------

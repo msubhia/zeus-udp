@@ -47,6 +47,9 @@ module connection_manager_wrapper #(
     assign m00_axis_tstrb = 8'hFF;
     assign m02_axis_tstrb = 8'hFF;
 
+    assign m02_axis_tdata[63:2]  = 'b0;
+    assign m00_axis_tdata[63:33] = 'b0;
+
     connection_manager #(
         .WAYS(WAYS)
     ) connection_manager_dut (
@@ -74,8 +77,7 @@ module connection_manager_wrapper #(
         .m02_axis_ctrl_ack(m02_axis_tdata[0]),
         .m02_axis_ctrl_full(m02_axis_tdata[1])
     );
-    assign m02_axis_tdata[63:2] = 'b0;
-    assign m00_axis_tdata[63:33] = 'b0;
+
 
 endmodule
 `default_nettype wire

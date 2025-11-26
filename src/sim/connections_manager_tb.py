@@ -186,6 +186,42 @@ class S_AXIS_Driver(BusDriver):
 ########################################################################################################
 ########################################################################################################
 
+
+def xor32to16(x):
+    x &= 0xFFFFFFFF
+    return ((x >> 16) & 0xFFFF) ^ (x & 0xFFFF)
+
+
+def generate_collision_set(num_chains=5, chain_len=5):
+    """
+    Returns a set of (num_chains * chain_len) unique 32-bit integers.
+    Each chain_len-group of integers shares the same xor32->16 hash.
+    The final return value is a *set* of all integers combined.
+    """
+
+    result = set()
+
+    for _ in range(num_chains):
+        chain = set()
+        target_hash = random.getrandbits(16)
+
+        while len(chain) < chain_len:
+            x = random.getrandbits(32)
+            if xor32to16(x) == target_hash and x not in result:
+                chain.add(x)
+
+        result.update(chain)
+
+    return result
+
+
+
+
+
+########################################################################################################
+########################################################################################################
+
+
 WAYS = 4
 TABLE_SIZE = 2**16
 
@@ -199,11 +235,6 @@ rd_sig_out_act = []
 wr_sig_in = []
 wr_sig_out_exp = []
 wr_sig_out_act = []
-
-
-def xor32to16(x):
-    x &= 0xFFFFFFFF
-    return ((x >> 16) & 0xFFFF) ^ (x & 0xFFFF)
 
 
 def connection_manager_model_rd(val):
@@ -238,6 +269,13 @@ def connection_manager_model_wr(val):
 
     if activate:  # insert
         inserted = False
+
+        # check if already exists
+        for w in range(WAYS):
+            if (my_hash_table_vlds[w][hash_key] == 1) and (my_hash_table_tags[w][hash_key] == key):
+                wr_sig_out_exp.append({"ack": 1, "full": 0})
+                return
+
         for w in range(WAYS):
             if my_hash_table_vlds[w][hash_key] == 0:
                 my_hash_table_vlds[w][hash_key] = 1
@@ -274,46 +312,10 @@ async def reset(clk,rst, cycles_held = 3,polarity=1):
     await ClockCycles(clk, cycles_held)
     rst.value = not polarity
 
+
+
 @cocotb.test()
 async def test_a(dut):
-
-    #
-    # ---------------------- BUILD HIGH-COLLISION IP POOL ----------------------
-    #
-
-    from collections import defaultdict
-
-    def build_hash_buckets(num_samples=500_000):
-        buckets = defaultdict(list)
-        for _ in range(num_samples):
-            key = random.getrandbits(32)
-            h = xor32to16(key)
-            buckets[h].append(key)
-        return buckets
-
-    def extract_multi_collision_buckets(buckets, min_chain=5):
-        return {h: keys for h, keys in buckets.items() if len(keys) >= min_chain}
-
-    def build_collision_pool(target_size=1000, min_chain=5):
-        buckets = build_hash_buckets()
-        multi   = extract_multi_collision_buckets(buckets, min_chain=min_chain)
-
-        pool = []
-        for key_list in multi.values():
-            pool.extend(key_list)
-            if len(pool) >= target_size:
-                return pool[:target_size]
-
-        return pool  # return whatever we found
-
-    # Build pool of 1000 high-collision IPs
-    COLLISION_POOL = build_collision_pool(target_size=1000, min_chain=5)
-    print(f"[TB] Built collision pool: {len(COLLISION_POOL)} keys")
-
-
-    #
-    # ----------------------- SETUP MONITORS / DRIVERS -------------------------
-    #
 
     rd_in_monitor   = AXIS_Monitor(dut,'s00',dut.s00_axis_aclk,callback = connection_manager_model_rd)
     rd_out_monitor  = AXIS_Monitor(dut,'m00',dut.s00_axis_aclk,callback = lambda x: appending_values_rd(x))
@@ -327,31 +329,29 @@ async def test_a(dut):
     wr_in_driver    = M_AXIS_Driver(dut,'s02',dut.s00_axis_aclk)
     wr_out_driver   = S_AXIS_Driver(dut,'m02',dut.s00_axis_aclk)
 
-
-    #
-    # --------------------------- CLOCK + RESET --------------------------------
-    #
-
     cocotb.start_soon(Clock(dut.s00_axis_aclk, 10, units="ns").start())
-
     await reset(dut.s00_axis_aclk, dut.s00_axis_aresetn, cycles_held=5, polarity=0)
-    # If your wrapper ties s02/m00/m02 resets together then it’s fine.
-    # If not, assert/deassert them here as well.
-
 
     #
     # ----------------------------- MAIN TEST ----------------------------------
     #
 
-    NUM_OPERATIONS = 1000
+    COLLISION_POOL = set()
+    target_hash = random.getrandbits(16)
+
+    while len(COLLISION_POOL) < 8:
+        x = random.getrandbits(32)
+        if xor32to16(x) == target_hash and x not in COLLISION_POOL:
+            COLLISION_POOL.add(x)
+
+    NUM_OPERATIONS = 100
 
     for _ in range(NUM_OPERATIONS):
 
         is_rd    = (random.random() < 0.9)   # 90% reads
-        activate = (random.random() < 0.5)   # 50% delete/insert
+        activate = (random.random() < 0.9)   # 90% insert
 
-        # 70% from high-collision pool, 30% pure random
-        if random.random() < 0.7:
+        if random.random() < 0.95:
             key = random.choice(COLLISION_POOL)
         else:
             key = random.getrandbits(32)
@@ -390,18 +390,11 @@ async def test_a(dut):
     # ------------------------------- CHECKING ---------------------------------
     #
 
-    assert rd_in_monitor.transactions == rd_out_monitor.transactions, \
-           "RD transaction count mismatch!"
+    assert rd_in_monitor.transactions == rd_out_monitor.transactions, "RD transaction count mismatch!"
+    assert wr_in_monitor.transactions == wr_out_monitor.transactions, "WR transaction count mismatch!"
+    assert len(rd_sig_in) == len(rd_sig_out_exp) == len(rd_sig_out_act), "RD bookkeeping mismatch!"
 
-    assert wr_in_monitor.transactions == wr_out_monitor.transactions, \
-           "WR transaction count mismatch!"
-
-    assert len(rd_sig_in) == len(rd_sig_out_exp) == len(rd_sig_out_act), \
-           "RD bookkeeping mismatch!"
-
-    for idx, (sig_in, expected, actual) in enumerate(
-        zip(rd_sig_in, rd_sig_out_exp, rd_sig_out_act)
-    ):
+    for idx, (sig_in, expected, actual) in enumerate(zip(rd_sig_in, rd_sig_out_exp, rd_sig_out_act)):
         if expected != actual:
             raise AssertionError(
                 f"RD mismatch {idx}: key=0x{sig_in['key']:08X} "
@@ -409,12 +402,9 @@ async def test_a(dut):
                 f"expected {expected}, got {actual}"
             )
 
-    assert len(wr_sig_in) == len(wr_sig_out_exp) == len(wr_sig_out_act), \
-           "WR bookkeeping mismatch!"
+    assert len(wr_sig_in) == len(wr_sig_out_exp) == len(wr_sig_out_act), "WR bookkeeping mismatch!"
 
-    for idx, (sig_in, expected, actual) in enumerate(
-        zip(wr_sig_in, wr_sig_out_exp, wr_sig_out_act)
-    ):
+    for idx, (sig_in, expected, actual) in enumerate(zip(wr_sig_in, wr_sig_out_exp, wr_sig_out_act)):
         if expected != actual:
             raise AssertionError(
                 f"WR mismatch {idx}: key=0x{sig_in['key']:08X} "
@@ -423,6 +413,104 @@ async def test_a(dut):
                 f"expected {expected}, got {actual}"
             )
 
+
+
+
+
+
+
+@cocotb.test()
+async def test_b(dut):
+
+    rd_in_monitor   = AXIS_Monitor(dut,'s00',dut.s00_axis_aclk,callback = connection_manager_model_rd)
+    rd_out_monitor  = AXIS_Monitor(dut,'m00',dut.s00_axis_aclk,callback = lambda x: appending_values_rd(x))
+
+    wr_in_monitor   = AXIS_Monitor(dut,'s02',dut.s00_axis_aclk,callback = connection_manager_model_wr)
+    wr_out_monitor  = AXIS_Monitor(dut,'m02',dut.s00_axis_aclk,callback = lambda x: appending_values_wr(x))
+
+    rd_in_driver    = M_AXIS_Driver(dut,'s00',dut.s00_axis_aclk)
+    rd_out_driver   = S_AXIS_Driver(dut,'m00',dut.s00_axis_aclk)
+
+    wr_in_driver    = M_AXIS_Driver(dut,'s02',dut.s00_axis_aclk)
+    wr_out_driver   = S_AXIS_Driver(dut,'m02',dut.s00_axis_aclk)
+
+    cocotb.start_soon(Clock(dut.s00_axis_aclk, 10, units="ns").start())
+    await reset(dut.s00_axis_aclk, dut.s00_axis_aresetn, cycles_held=5, polarity=0)
+
+    #
+    # ----------------------------- MAIN TEST ----------------------------------
+    #
+
+    COLLISION_POOL = generate_collision_set(num_chains=10)
+
+    NUM_OPERATIONS = 1000
+
+    for _ in range(NUM_OPERATIONS):
+
+        is_rd    = (random.random() < 0.9)   # 90% reads
+        activate = (random.random() < 0.9)   # 90% insert
+
+        if random.random() < 0.95:
+            key = random.choice(COLLISION_POOL)
+        else:
+            key = random.getrandbits(32)
+
+        val = key
+
+        if is_rd:
+            rd_in_driver.append(
+                {'type':'write_single', "contents":{"data": val, "last":1}}
+            )
+            rd_in_driver.append(
+                {"type":"pause", "duration": random.randint(1,6)}
+            )
+
+        else:
+            # Insert/delete command
+            val |= (activate << 32)
+            wr_in_driver.append(
+                {'type':'write_single', "contents":{"data": val, "last":1}}
+            )
+            wr_in_driver.append(
+                {"type":"pause", "duration": random.randint(1,6)}
+            )
+
+    #
+    # ---------------------------- READ OUT RESPONSES --------------------------
+    #
+
+    rd_out_driver.append({'type':'read', "duration": NUM_OPERATIONS * 30})
+    wr_out_driver.append({'type':'read', "duration": NUM_OPERATIONS * 30})
+
+    await ClockCycles(dut.s00_axis_aclk, NUM_OPERATIONS + 20000)
+
+
+    #
+    # ------------------------------- CHECKING ---------------------------------
+    #
+
+    assert rd_in_monitor.transactions == rd_out_monitor.transactions, "RD transaction count mismatch!"
+    assert wr_in_monitor.transactions == wr_out_monitor.transactions, "WR transaction count mismatch!"
+    assert len(rd_sig_in) == len(rd_sig_out_exp) == len(rd_sig_out_act), "RD bookkeeping mismatch!"
+
+    for idx, (sig_in, expected, actual) in enumerate(zip(rd_sig_in, rd_sig_out_exp, rd_sig_out_act)):
+        if expected != actual:
+            raise AssertionError(
+                f"RD mismatch {idx}: key=0x{sig_in['key']:08X} "
+                f"hash=0x{sig_in['hash_key']:04X} "
+                f"expected {expected}, got {actual}"
+            )
+
+    assert len(wr_sig_in) == len(wr_sig_out_exp) == len(wr_sig_out_act), "WR bookkeeping mismatch!"
+
+    for idx, (sig_in, expected, actual) in enumerate(zip(wr_sig_in, wr_sig_out_exp, wr_sig_out_act)):
+        if expected != actual:
+            raise AssertionError(
+                f"WR mismatch {idx}: key=0x{sig_in['key']:08X} "
+                f"hash=0x{sig_in['hash_key']:04X} "
+                f"activate={sig_in['activate']} "
+                f"expected {expected}, got {actual}"
+            )
 
 ########################################################################################################
 ########################################################################################################
