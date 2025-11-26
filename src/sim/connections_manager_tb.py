@@ -230,33 +230,31 @@ def appending_values_rd(val):
 
 def connection_manager_model_wr(val):
     activate = (val >> 32) & 1
-    key = val & 0xFFFFFFFF
+    key      = val & 0xFFFFFFFF
     hash_key = xor32to16(key)
 
     wr_sig_in.append({"key": key, "hash_key": hash_key, "activate": activate})
     print({"key": key, "hash_key": hex(hash_key), "activate": activate})
 
-    expected = {"ack": 0, "full": 0}
-
-    if not activate:  # delete
-
-        for w in range(WAYS):
-            if my_hash_table_tags[w][hash_key] == key:
-                my_hash_table_vlds[w][hash_key] = 0
-                my_hash_table_tags[w][hash_key] = 0
-                expected = {"ack": 1, "full": 0}
-
-        expected = {"ack": 1, "full": 0}
-
-    else:  # insert
-
+    if activate:  # insert
+        inserted = False
         for w in range(WAYS):
             if my_hash_table_vlds[w][hash_key] == 0:
                 my_hash_table_vlds[w][hash_key] = 1
                 my_hash_table_tags[w][hash_key] = key
-                expected = {"ack": 1, "full": 0}
+                inserted = True
                 break
-        expected = {"ack": 1, "full": 1}
+
+        expected = {"ack": 1, "full": 0 if inserted else 1}
+
+    else:  # delete
+        found = False
+        for w in range(WAYS):
+            if my_hash_table_vlds[w][hash_key] and my_hash_table_tags[w][hash_key] == key:
+                my_hash_table_vlds[w][hash_key] = 0
+                my_hash_table_tags[w][hash_key] = 0
+                found = True
+        expected = {"ack": 1, "full": 0}
 
     wr_sig_out_exp.append(expected)
 
