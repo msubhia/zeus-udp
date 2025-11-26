@@ -151,7 +151,7 @@ module connection_manager #(
     // -------------------------------------------------------------------------
     // Control FSM
     // -------------------------------------------------------------------------
-    typedef enum logic [1:0] {
+    typedef enum logic [2:0] {
         STATE_IDLE,
         STATE_READ,
         STATE_ACTIVATE_CHECK,
@@ -263,7 +263,7 @@ module connection_manager #(
                     end else begin
                         if (way_iter == WAYS-1) begin
                             m02_axis_ctrl_valid <= 1'b1;
-                            m02_axis_ctrl_ack   <= 1'b0;
+                            m02_axis_ctrl_ack   <= 1'b1;
                             m02_axis_ctrl_full  <= 1'b1;
                             state <= STATE_IDLE;
                         end else begin

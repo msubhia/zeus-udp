@@ -1,8 +1,6 @@
 <testsuites name="results">
   <testsuite name="all" package="all">
-    <property name="random_seed" value="1764130070" />
-    <testcase name="test_a" classname="connections_manager_tb" file="/home/msubhi_a/Documents/zeus-rpc/src/sim/connections_manager_tb.py" lineno="280" time="3.8475089073181152" sim_time_ns="101010.001" ratio_time="26253.350787018313">
-      <failure message="Test failed with RANDOM_SEED=1764130070" />
-    </testcase>
+    <property name="random_seed" value="1764188232" />
+    <testcase name="test_b" classname="connections_manager_tb" file="/home/msubhi_a/Documents/zeus-rpc/src/sim/connections_manager_tb.py" lineno="415" time="8.259609937667847" sim_time_ns="201040.001" ratio_time="24340.132587031694" />
   </testsuite>
 </testsuites>
