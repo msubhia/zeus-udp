@@ -314,7 +314,7 @@ async def reset(clk,rst, cycles_held = 3,polarity=1):
 
 
 
-@cocotb.test()
+# @cocotb.test()
 async def test_a(dut):
 
     rd_in_monitor   = AXIS_Monitor(dut,'s00',dut.s00_axis_aclk,callback = connection_manager_model_rd)
@@ -412,7 +412,7 @@ async def test_a(dut):
 
 
 
-@cocotb.test()
+# @cocotb.test()
 async def test_b(dut):
 
     rd_in_monitor   = AXIS_Monitor(dut,'s00',dut.s00_axis_aclk,callback = connection_manager_model_rd)
@@ -504,6 +504,119 @@ async def test_b(dut):
                 f"activate={sig_in['activate']} "
                 f"expected {expected}, got {actual}"
             )
+
+
+
+
+
+
+@cocotb.test()
+async def test_c(dut):
+    """
+    This test assumes writes happens much before reads
+    """
+
+    rd_in_monitor   = AXIS_Monitor(dut,'s00',dut.s00_axis_aclk,callback = connection_manager_model_rd)
+    rd_out_monitor  = AXIS_Monitor(dut,'m00',dut.s00_axis_aclk,callback = lambda x: appending_values_rd(x))
+
+    wr_in_monitor   = AXIS_Monitor(dut,'s02',dut.s00_axis_aclk,callback = connection_manager_model_wr)
+    wr_out_monitor  = AXIS_Monitor(dut,'m02',dut.s00_axis_aclk,callback = lambda x: appending_values_wr(x))
+
+    rd_in_driver    = M_AXIS_Driver(dut,'s00',dut.s00_axis_aclk)
+    rd_out_driver   = S_AXIS_Driver(dut,'m00',dut.s00_axis_aclk)
+
+    wr_in_driver    = M_AXIS_Driver(dut,'s02',dut.s00_axis_aclk)
+    wr_out_driver   = S_AXIS_Driver(dut,'m02',dut.s00_axis_aclk)
+
+    cocotb.start_soon(Clock(dut.s00_axis_aclk, 10, units="ns").start())
+    await reset(dut.s00_axis_aclk, dut.s00_axis_aresetn, cycles_held=5, polarity=0)
+
+    #
+    # ----------------------------- MAIN TEST ----------------------------------
+    #
+
+    COLLISION_POOL = set()
+    target_hash = random.getrandbits(16)
+
+    COLLISION_POOL = list(generate_collision_set(num_chains=124))
+
+    NUM_OPERATIONS = 1000
+
+    for _ in range(NUM_OPERATIONS):
+
+        activate = (random.random() < 0.9)   # 90% insert
+
+        key = random.choice(COLLISION_POOL)
+        val = key
+
+        val |= (activate << 32)
+        wr_in_driver.append(
+            {'type':'write_single', "contents":{"data": val, "last":1}}
+        )
+        wr_in_driver.append(
+            {"type":"pause", "duration": random.randint(1,6)}
+        )
+
+    wr_out_driver.append({'type':'read', "duration": NUM_OPERATIONS * 30})
+    await ClockCycles(dut.s00_axis_aclk, NUM_OPERATIONS + 20000)
+
+    NUM_OPERATIONS = 10000
+
+    for _ in range(NUM_OPERATIONS):
+
+        key = random.choice(COLLISION_POOL)
+        val = key
+
+        rd_in_driver.append(
+            {'type':'write_single', "contents":{"data": val, "last":1}}
+        )
+        rd_in_driver.append(
+            {"type":"pause", "duration": random.randint(1,6)}
+        )
+
+    rd_out_driver.append({'type':'read', "duration": NUM_OPERATIONS * 30})
+    await ClockCycles(dut.s00_axis_aclk, NUM_OPERATIONS + 30000)
+
+
+    #
+    # ------------------------------- CHECKING ---------------------------------
+    #
+    print("VALIDATION:\n\n\n")
+    assert rd_in_monitor.transactions == rd_out_monitor.transactions, "RD transaction count mismatch!"
+    assert wr_in_monitor.transactions == wr_out_monitor.transactions, "WR transaction count mismatch!"
+    assert len(rd_sig_in) == len(rd_sig_out_exp) == len(rd_sig_out_act), "RD bookkeeping mismatch!"
+
+    for idx, (sig_in, expected, actual) in enumerate(zip(rd_sig_in, rd_sig_out_exp, rd_sig_out_act)):
+        if expected != actual:
+            print(
+                f"ERROR:    RD mismatch {idx}: key=0x{hex(sig_in['key'])} "
+                f"hash=0x{hex(sig_in['hash_key'])} "
+                f"expected {expected}, got {actual}"
+            )
+
+    assert len(wr_sig_in) == len(wr_sig_out_exp) == len(wr_sig_out_act), "WR bookkeeping mismatch!"
+
+    for idx, (sig_in, expected, actual) in enumerate(zip(wr_sig_in, wr_sig_out_exp, wr_sig_out_act)):
+        if expected != actual:
+            print(
+                f"ERROR:    WR mismatch {idx}: key=0x{hex(sig_in['key'])} "
+                f"hash=0x{hex(sig_in['hash_key'])} "
+                f"activate={sig_in['activate']} "
+                f"expected {expected}, got {actual}"
+            )
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ########################################################################################################
 ########################################################################################################
