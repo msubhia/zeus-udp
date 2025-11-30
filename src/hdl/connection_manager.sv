@@ -457,9 +457,11 @@ module connection_manager #(
                 STATE_ACTIVATE_CHECK: begin
                     logic local_is_any;
                     local_is_any = 1'b0;
+
                     for (int i=0; i<WAYS; i++) begin
                         if (ctrl_dout_tag[i] == ctrl_ipAddr_q && ctrl_dout_valid[i]) begin
-                            local_is_any = 1'b1;
+                            m02_axis_ctrl_connectionId[CONN_ID_WIDTH-1:HASH_WIDTH] <= i;
+                            local_is_any |= 1;
                         end
                     end
 
@@ -467,6 +469,7 @@ module connection_manager #(
                         m02_axis_ctrl_valid <= 1'b1;
                         m02_axis_ctrl_ack   <= 1'b1;
                         state               <= STATE_IDLE;
+                        m02_axis_ctrl_connectionId[HASH_WIDTH-1:0] <= ctrl_hash_idx_q;
                     end else begin
                         state               <= STATE_ACTIVATE;
                     end
