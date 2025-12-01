@@ -25,6 +25,7 @@ typedef struct packed {  // 14 bytes
 // ----------------------------------------------------------------
 parameter int IP_VERSION_IPV4 = 4;
 parameter int IP_VERSION_IPV6 = 6;
+parameter int IP_HEADER_BYTES = 20;
 
 parameter int IP_PROTO_ICMP = 1;  // Control message protocol
 parameter int IPPROTO_TCP = 6;  // Transmission control protocol
