@@ -6,7 +6,8 @@
 // ============================================================================
 //
 // Author:          M.Subhi Abordan (msubhi_a@mit.edu)
-// Last Modified:   Nov 28, 2025
+//                  Mena Filfil     (menaf@mit.edu)
+// Last Modified:   Nov 30, 2025
 //
 //
 // Description:
@@ -92,10 +93,9 @@ module connection_manager #(
     localparam int INDEXES          = 1 << HASH_WIDTH,
     localparam int WAYS_LOG         = $clog2(WAYS)
 )(
-    input  wire clk,
-    input  wire rst, // sync, active high
-
     // Forward Lookup Channel
+    input  wire                         s00_axis_fw_lookup_aclk,
+    input  wire                         s00_axis_fw_lookup_aresetn,
     input  wire                         s00_axis_fw_lookup_valid,
     input  wire [IP_ADDR_WIDTH-1:0]     s00_axis_fw_lookup_ipAddr,
     output logic                        s00_axis_fw_lookup_ready,
@@ -106,6 +106,8 @@ module connection_manager #(
     output logic [CONN_ID_WIDTH-1:0]    m00_axis_fw_lookup_connectionId,
 
     // Reverse Lookup Channel
+    input  wire                         s01_axis_rv_lookup_aclk,
+    input  wire                         s01_axis_rv_lookup_aresetn,
     input  wire                         s01_axis_rv_lookup_valid,
     input  wire [CONN_ID_WIDTH-1:0]     s01_axis_rv_lookup_connectionId,
     output logic                        s01_axis_rv_lookup_ready,
@@ -118,6 +120,8 @@ module connection_manager #(
     output logic [UDP_PORT_WIDTH-1:0]   m01_axis_rv_lookup_udpPort,
 
     // Control (Writes) Channel
+    input  wire                         s02_axis_ctrl_aclk,
+    input  wire                         s02_axis_ctrl_aresetn,
     input  wire                         s02_axis_ctrl_valid,
     input  wire [MAC_ADDR_WIDTH-1:0]    s02_axis_ctrl_macAddr,
     input  wire [IP_ADDR_WIDTH-1:0]     s02_axis_ctrl_ipAddr,
@@ -174,13 +178,13 @@ module connection_manager #(
                 .DATA_DEPTH(INDEXES),
                 .BRAM_LATENCY(BRAM_LATENCY)
             ) tag_array (
-                .clka(clk), .rsta(rst), .ena(1'b1),
+                .clka(s02_axis_ctrl_aclk), .rsta(!s02_axis_ctrl_aresetn), .ena(1'b1),
                 .wea(ctrl_wren[w]),
                 .addra(ctrl_addr),
                 .dina(ctrl_din_tag),
                 .douta(ctrl_dout_tag[w]),
 
-                .clkb(clk), .rstb(rst), .enb(1'b1), .web(1'b0), .dinb('0),
+                .clkb(s00_axis_fw_lookup_aclk), .rstb(!s00_axis_fw_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
                 .addrb(fw_hash_idx),
                 .doutb(fw_tag[w])
             );
@@ -191,13 +195,13 @@ module connection_manager #(
                 .DATA_DEPTH(INDEXES),
                 .BRAM_LATENCY(BRAM_LATENCY)
             ) valid_array (
-                .clka(clk), .rsta(rst), .ena(1'b1),
+                .clka(s02_axis_ctrl_aclk), .rsta(!s02_axis_ctrl_aresetn), .ena(1'b1),
                 .wea(ctrl_wren[w]),
                 .addra(ctrl_addr),
                 .dina(ctrl_din_valid),
                 .douta(ctrl_dout_valid[w]),
 
-                .clkb(clk), .rstb(rst), .enb(1'b1), .web(1'b0), .dinb('0),
+                .clkb(s00_axis_fw_lookup_aclk), .rstb(!s00_axis_fw_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
                 .addrb(fw_hash_idx),
                 .doutb(fw_valid[w])
             );
@@ -207,12 +211,12 @@ module connection_manager #(
                 .DATA_DEPTH(INDEXES),
                 .BRAM_LATENCY(BRAM_LATENCY)
             ) macAddr_array (
-                .clka(clk), .rsta(rst), .ena(1'b1), .douta(),
+                .clka(s02_axis_ctrl_aclk), .rsta(!s02_axis_ctrl_aresetn), .ena(1'b1), .douta(),
                 .wea(ctrl_wren[w]),
                 .addra(ctrl_addr),
                 .dina(ctrl_din_macAddr),
 
-                .clkb(clk), .rstb(rst), .enb(1'b1), .web(1'b0), .dinb('0),
+                .clkb(s01_axis_rv_lookup_aclk), .rstb(!s01_axis_rv_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
                 .addrb(rv_hash_idx),
                 .doutb(rv_macAddr[w])
             );
@@ -222,12 +226,12 @@ module connection_manager #(
                 .DATA_DEPTH(INDEXES),
                 .BRAM_LATENCY(BRAM_LATENCY)
             ) ipAddr_array (
-                .clka(clk), .rsta(rst), .ena(1'b1), .douta(),
+                .clka(s02_axis_ctrl_aclk), .rsta(!s02_axis_ctrl_aresetn), .ena(1'b1), .douta(),
                 .wea(ctrl_wren[w]),
                 .addra(ctrl_addr),
                 .dina(ctrl_din_ipAddr),
 
-                .clkb(clk), .rstb(rst), .enb(1'b1), .web(1'b0), .dinb('0),
+                .clkb(s01_axis_rv_lookup_aclk), .rstb(!s01_axis_rv_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
                 .addrb(rv_hash_idx),
                 .doutb(rv_ipAddr[w])
             );
@@ -237,12 +241,12 @@ module connection_manager #(
                 .DATA_DEPTH(INDEXES),
                 .BRAM_LATENCY(BRAM_LATENCY)
             ) udpPort_array (
-                .clka(clk), .rsta(rst), .ena(1'b1), .douta(),
+                .clka(s02_axis_ctrl_aclk), .rsta(!s02_axis_ctrl_aresetn), .ena(1'b1), .douta(),
                 .wea(ctrl_wren[w]),
                 .addra(ctrl_addr),
                 .dina(ctrl_din_udpPort),
 
-                .clkb(clk), .rstb(rst), .enb(1'b1), .web(1'b0), .dinb('0),
+                .clkb(s01_axis_rv_lookup_aclk), .rstb(!s01_axis_rv_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
                 .addrb(rv_hash_idx),
                 .doutb(rv_udpPort[w])
             );
@@ -252,12 +256,12 @@ module connection_manager #(
                 .DATA_DEPTH(INDEXES),
                 .BRAM_LATENCY(BRAM_LATENCY)
             ) valid_array2 (
-                .clka(clk), .rsta(rst), .ena(1'b1), .douta(),
+                .clka(s02_axis_ctrl_aclk), .rsta(!s02_axis_ctrl_aresetn), .ena(1'b1), .douta(),
                 .wea(ctrl_wren[w]),
                 .addra(ctrl_addr),
                 .dina(ctrl_din_valid),
 
-                .clkb(clk), .rstb(rst), .enb(1'b1), .web(1'b0), .dinb('0),
+                .clkb(s01_axis_rv_lookup_aclk), .rstb(!s01_axis_rv_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
                 .addrb(rv_hash_idx),
                 .doutb(rv_valid[w])
             );
@@ -279,7 +283,7 @@ module connection_manager #(
     logic [BRAM_LATENCY-1:0][HASH_WIDTH-1:0]     fw_hash_idx_pipe;
     logic [BRAM_LATENCY-1:0]                     fw_valid_pipe;
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge s00_axis_fw_lookup_aclk) begin
         fw_ipAddr_pipe[0]   <= s00_axis_fw_lookup_ipAddr;
         fw_hash_idx_pipe[0] <= fw_hash_idx;
         fw_valid_pipe[0]    <= s00_axis_fw_lookup_valid;
@@ -321,7 +325,7 @@ module connection_manager #(
     logic [BRAM_LATENCY-1:0][WAYS_LOG-1:0]      rv_way_pipe;
     logic [BRAM_LATENCY-1:0]                    rv_valid_pipe;
 
-    always_ff @(posedge clk) begin
+    always_ff @(posedge s01_axis_rv_lookup_aclk) begin
         rv_hash_idx_pipe[0] <= rv_hash_idx;
         rv_way_pipe[0]      <= rv_way;
         rv_valid_pipe[0]    <= s01_axis_rv_lookup_valid;
@@ -372,8 +376,8 @@ module connection_manager #(
 
     assign ctrl_addr = ctrl_hash_idx_q;
 
-    always_ff @(posedge clk) begin
-        if (rst) begin
+    always_ff @(posedge s02_axis_ctrl_aclk) begin
+        if (!s02_axis_ctrl_aresetn) begin
             state                   <= STATE_IDLE;
 
             ctrl_ipAddr_q           <= 'b0;

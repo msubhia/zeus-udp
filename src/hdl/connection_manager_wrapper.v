@@ -1,6 +1,22 @@
 `default_nettype none
 `timescale 1ns/1ps
 
+
+// ============================================================================
+// Connection Manager Wrapper for COCOTB
+// ============================================================================
+//
+// Authors:          M.Subhi Abordan (msubhi_a@mit.edu)
+//                   Mena Filfil     (menaf@mit.edu)
+// Last Modified:    Nov 30, 2025
+//
+// note: assumes a single domain
+//
+// ============================================================================
+// END
+// ============================================================================
+
+
 module connection_manager_wrapper #(
     parameter int WAYS = 4
 )(
@@ -77,12 +93,11 @@ module connection_manager_wrapper #(
     connection_manager #(
         .WAYS(WAYS)
     ) connection_manager_dut (
-        .clk(s00_axis_aclk),
-        .rst(!s00_axis_aresetn),
-
         // -------------------------------------------------------------------------
         // Forward Lookup Channel
         // -------------------------------------------------------------------------
+        .s00_axis_fw_lookup_aclk(s00_axis_aclk),
+        .s00_axis_fw_lookup_aresetn(s00_axis_aresetn),
         .s00_axis_fw_lookup_valid(s00_axis_tvalid),
         .s00_axis_fw_lookup_ipAddr(s00_axis_tdata),
         .s00_axis_fw_lookup_ready(s00_axis_tready),
@@ -95,6 +110,8 @@ module connection_manager_wrapper #(
         // -------------------------------------------------------------------------
         // Reverse Lookup Channel
         // -------------------------------------------------------------------------
+        .s01_axis_rv_lookup_aclk(s00_axis_aclk),
+        .s01_axis_rv_lookup_aresetn(s00_axis_aresetn),
         .s01_axis_rv_lookup_valid(s01_axis_tvalid),
         .s01_axis_rv_lookup_connectionId(s01_axis_tdata[CONN_ID_WIDTH-1:0]),
         .s01_axis_rv_lookup_ready(s01_axis_tready),
@@ -109,6 +126,8 @@ module connection_manager_wrapper #(
         // -------------------------------------------------------------------------
         // Control (Write) Channel
         // -------------------------------------------------------------------------
+        .s02_axis_ctrl_aclk(s00_axis_aclk),
+        .s02_axis_ctrl_aresetn(s00_axis_aresetn),
         .s02_axis_ctrl_valid(s02_axis_tvalid),
         .s02_axis_ctrl_macAddr(s02_axis_tdata[47:0]),
         .s02_axis_ctrl_ipAddr(s02_axis_tdata[95:64]),

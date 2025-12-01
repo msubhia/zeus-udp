@@ -37,7 +37,7 @@ module dual_port_bram #(
         .BYTE_WRITE_WIDTH_A(DATA_WIDTH),        
         .BYTE_WRITE_WIDTH_B(DATA_WIDTH),        
         .CASCADE_HEIGHT(0),             
-        .CLOCKING_MODE("common_clock"), 
+        .CLOCKING_MODE("independent_clock"), 
         .ECC_BIT_RANGE("7:0"),          
         .ECC_MODE("no_ecc"),            
         .ECC_TYPE("none"),              
