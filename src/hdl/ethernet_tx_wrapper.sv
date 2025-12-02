@@ -1,9 +1,30 @@
 `default_nettype none
 `timescale 1ns/1ps
 
+`include "zeus_rpc.svh"
+
 // wapper around connection manager and tx
 
-module ethernet_tx_wrapper(
+module ethernet_tx_wrapper #(
+    parameter int DATA_WIDTH                    = 512,
+    parameter int KEEP_WIDTH                    = DATA_WIDTH/8,
+
+    parameter int IP_UDP_DSCP                   = 0,
+    parameter int IP_UDP_ENC                    = 0,
+    parameter int IP_UDP_IDEN                   = 0,
+    parameter int IP_UDP_FLAGS                  = 0,
+    parameter int IP_UDP_FRAG_OFFSET            = 0,
+    parameter int IP_UDP_TTL                    = 64,
+
+    parameter int WAYS                          = 4,
+    parameter int HASH_WIDTH                    = 16,
+    parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
+    parameter int CONNECTION_MANAGER_LATENCY    = 3,
+
+    localparam int IP_ADDR_WIDTH                = 32,
+    localparam int MAC_ADDR_WIDTH               = 48,
+    localparam int UDP_PORT_WIDTH               = 16
+) (
     input wire [31:0]   my_config_ipAddr,
     input wire [47:0]   my_config_macAddr,
     input wire [15:0]   my_config_udpPort,
@@ -87,18 +108,18 @@ module ethernet_tx_wrapper(
         // Control (Writes) Channel
         .s02_axis_ctrl_aclk(s00_axis_aclk),
         .s02_axis_ctrl_aresetn(s00_axis_aresetn),
-        .s02_axis_ctrl_valid(s02_axis_ctrl_valid),
-        .s02_axis_ctrl_macAddr(s02_axis_ctrl_macAddr),
-        .s02_axis_ctrl_ipAddr(s02_axis_ctrl_ipAddr),
-        .s02_axis_ctrl_udpPort(s02_axis_ctrl_udpPort),
-        .s02_axis_ctrl_bind(s02_axis_ctrl_bind),
-        .s02_axis_ctrl_ready(s02_axis_ctrl_ready),
+        .s02_axis_ctrl_valid(s02_axis_tvalid),
+        .s02_axis_ctrl_macAddr(s02_axis_tdata[47:0]),
+        .s02_axis_ctrl_ipAddr(s02_axis_tdata[95:64]),
+        .s02_axis_ctrl_udpPort(s02_axis_tdata[63:48]),
+        .s02_axis_ctrl_bind(s02_axis_tdata[96]),
+        .s02_axis_ctrl_ready(s02_axis_tready),
 
-        .m02_axis_ctrl_ready(m02_axis_ctrl_ready),
-        .m02_axis_ctrl_valid(m02_axis_ctrl_valid),
-        .m02_axis_ctrl_ack(m02_axis_ctrl_ack),
-        .m02_axis_ctrl_connectionId(m02_axis_ctrl_connectionId),
-        .m02_axis_ctrl_full(m02_axis_ctrl_full)
+        .m02_axis_ctrl_ready(m02_axis_tready),
+        .m02_axis_ctrl_valid(m02_axis_tvalid),
+        .m02_axis_ctrl_ack(m02_axis_tdata[CONN_ID_WIDTH]),
+        .m02_axis_ctrl_full(m02_axis_tdata[CONN_ID_WIDTH+1]),
+        .m02_axis_ctrl_connectionId(m02_axis_tdata[CONN_ID_WIDTH-1:0])
     );
 
     ethernet_tx #(
@@ -131,15 +152,15 @@ module ethernet_tx_wrapper(
         .udp_tx_axis_tvalid(s00_axis_tvalid),
         .udp_tx_axis_tlast(s00_axis_tlast),
 
-        .m01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
-        .m01_axis_rv_lookup_connectionId(m01_axis_rv_lookup_connectionId),
-        .m01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
-        .s01_axis_rv_lookup_ready(s01_axis_rv_lookup_ready),
-        .s01_axis_rv_lookup_valid(s01_axis_rv_lookup_valid),
-        .s01_axis_rv_lookup_hit(s01_axis_rv_lookup_hit),
-        .s01_axis_rv_lookup_macAddr(s01_axis_rv_lookup_macAddr),
-        .s01_axis_rv_lookup_ipAddr(s01_axis_rv_lookup_ipAddr),
-        .s01_axis_rv_lookup_udpPort(s01_axis_rv_lookup_udpPort)
+        .m01_axis_rv_lookup_valid(s01_axis_rv_lookup_valid),
+        .m01_axis_rv_lookup_connectionId(s01_axis_rv_lookup_connectionId),
+        .m01_axis_rv_lookup_ready(s01_axis_rv_lookup_ready),
+        .s01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
+        .s01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
+        .s01_axis_rv_lookup_hit(m01_axis_rv_lookup_hit),
+        .s01_axis_rv_lookup_macAddr(m01_axis_rv_lookup_macAddr),
+        .s01_axis_rv_lookup_ipAddr(m01_axis_rv_lookup_ipAddr),
+        .s01_axis_rv_lookup_udpPort(m01_axis_rv_lookup_udpPort)
     );
 
 endmodule

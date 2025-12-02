@@ -1,13 +1,22 @@
 `default_nettype none
 `timescale 1ns/1ps
 
-// helper
-function automatic logic [8*NUM_BYTES-1:0] swap_bytes
-    #(int NUM_BYTES = 4)
-    (input logic [8*NUM_BYTES-1:0] din);
+`include "zeus_rpc.svh"
 
-    for (int i = 0; i < NUM_BYTES; i++) begin
-        swap_bytes[i*8 +: 8] = din[(NUM_BYTES-1-i)*8 +: 8];
+// helper functions
+function automatic logic [15:0] swap_bytes_2(input logic [15:0] din);
+    swap_bytes_2 = {din[7:0], din[15:8]};
+endfunction
+
+function automatic logic [47:0] swap_bytes_6(input logic [47:0] din);
+    for (int i = 0; i < 6; i++) begin
+        swap_bytes_6[i*8 +: 8] = din[(6-1-i)*8 +: 8];
+    end
+endfunction
+
+function automatic logic [31:0] swap_bytes_4(input logic [31:0] din);
+    for (int i = 0; i < 4; i++) begin
+        swap_bytes_4[i*8 +: 8] = din[(4-1-i)*8 +: 8];
     end
 endfunction
 
@@ -80,12 +89,12 @@ module tx_headers_prepend #(
     localparam int MAC_ADDR_WIDTH               = 48,
     localparam int UDP_PORT_WIDTH               = 16,
     localparam int CONNECTION_META_WIDTH        = IP_ADDR_WIDTH + MAC_ADDR_WIDTH + UDP_PORT_WIDTH + 1,
-    localparam int IP_PACKET_LENGTH_WIDTH       = 16
-    localparam int ETH_HEADER_BYTES             = 14;
-    localparam int IP_HEADER_BYTES              = 20;
-    localparam int UDP_HEADER_BYTES             = 8;
-    localparam int TOTAL_HEADERS_BYTES          = ETH_HEADER_BYTES + IP_HEADER_BYTES + UDP_HEADER_BYTES;
-    localparam int TOTAL_HEADERS_BITS           = TOTAL_HEADERS_BYTES * 8;
+    localparam int IP_PACKET_LENGTH_WIDTH       = 16,
+    localparam int ETH_HEADER_BYTES             = 14,
+    localparam int IP_HEADER_BYTES              = 20,
+    localparam int UDP_HEADER_BYTES             = 8,
+    localparam int TOTAL_HEADERS_BYTES          = ETH_HEADER_BYTES + IP_HEADER_BYTES + UDP_HEADER_BYTES,
+    localparam int TOTAL_HEADERS_BITS           = TOTAL_HEADERS_BYTES * 8
 ) (
     input wire                                  tx_axis_aclk,
     input wire                                  tx_axis_aresetn,
@@ -136,26 +145,26 @@ module tx_headers_prepend #(
     logic [63:0] my_udp_header;
 
     always_comb begin: HEADERS_CONSTRUCTION
-        my_eth_header[47:0]     = swap_bytes #(.NUM_BYTES(6))(dst_macAddr);
-        my_eth_header[95:48]    = swap_bytes #(.NUM_BYTES(6))(my_config_macAddr);
-        my_eth_header[111:96]   = swap_bytes #(.NUM_BYTES(2))(ETHTYPE_IP);
+        my_eth_header[47:0]     = swap_bytes_6(dst_macAddr);
+        my_eth_header[95:48]    = swap_bytes_6(my_config_macAddr);
+        my_eth_header[111:96]   = swap_bytes_2(ETHTYPE_IP);
 
         my_ip_header[7:4]       = IP_VERSION_IPV4;
         my_ip_header[3:0]       = IP_HEADER_BYTES/4; // in 32-words
         my_ip_header[15:10]     = IP_UDP_DSCP;
         my_ip_header[9:8]       = IP_UDP_ENC;
-        my_ip_header[47:32]     = swap_bytes#(.NUM_BYTES(2))(IP_UDP_IDEN);
-        my_ip_header[63:48]     = swap_bytes#(.NUM_BYTES(2))({IP_UDP_FLAGS, IP_UDP_FRAG_OFFSET});
+        my_ip_header[47:32]     = swap_bytes_2(IP_UDP_IDEN);
+        my_ip_header[63:48]     = swap_bytes_2({IP_UDP_FLAGS, IP_UDP_FRAG_OFFSET});
         my_ip_header[71:64]     = IP_UDP_TTL;
         my_ip_header[79:72]     = IPPROTO_UDP;
-        my_ip_header[31:16]     = swap_bytes#(.NUM_BYTES(2))(payload_length_fifo_tdata + IP_HEADER_BYTES + UDP_HEADER_BYTES);
+        my_ip_header[31:16]     = swap_bytes_2(payload_length_fifo_tdata + IP_HEADER_BYTES + UDP_HEADER_BYTES);
         my_ip_header[95:80]     = 16'b0; // ip_hdr_checksum to be computed by downstream module
-        my_ip_header[127:96]    = swap_bytes#(.NUM_BYTES(4))(my_config_ipAddr);
-        my_ip_header[159:128]   = swap_bytes#(.NUM_BYTES(4))(dst_ipAddr);
+        my_ip_header[127:96]    = swap_bytes_4(my_config_ipAddr);
+        my_ip_header[159:128]   = swap_bytes_4(dst_ipAddr);
 
-        my_udp_header[15:0]     = swap_bytes#(.NUM_BYTES(2))(my_config_udpPort);
-        my_udp_header[31:16]    = swap_bytes#(.NUM_BYTES(2))(dst_udpPort);
-        my_udp_header[47:32]    = swap_bytes#(.NUM_BYTES(2))(payload_length_fifo_tdata + UDP_HEADER_BYTES);
+        my_udp_header[15:0]     = swap_bytes_2(my_config_udpPort);
+        my_udp_header[31:16]    = swap_bytes_2(dst_udpPort);
+        my_udp_header[47:32]    = swap_bytes_2(payload_length_fifo_tdata + UDP_HEADER_BYTES);
         my_udp_header[63:48]    = 16'b0; // udp_checksum optional in IPv4
     end
 
@@ -209,7 +218,7 @@ module tx_headers_prepend #(
                         internal_reg                <= packet_fifo_tdata[ (DATA_WIDTH-1) : (DATA_WIDTH - TOTAL_HEADERS_BITS) ];
 
                         if (packet_fifo_tlast) begin
-                            if (packet_fifo_tkeep >  {(TOTAL_HEADERS_BYTES){1'b0}, (DATA_WIDTH/8-TOTAL_HEADERS_BYTES){1'b1}}) begin
+                            if (packet_fifo_tkeep > {{TOTAL_HEADERS_BYTES{1'b0}}, {(DATA_WIDTH/8-TOTAL_HEADERS_BYTES){1'b1}}}) begin
                                 my_tx_state                     <= TX_TAIL;
                                 to_checksum_tx_axis_tkeep       <= {(DATA_WIDTH/8){1'b1}};
                                 to_checksum_tx_axis_tlast       <= 1'b0;
@@ -240,7 +249,7 @@ module tx_headers_prepend #(
                         internal_reg                <= packet_fifo_tdata[ (DATA_WIDTH-1) : (DATA_WIDTH - TOTAL_HEADERS_BITS) ];
 
                         if (packet_fifo_tlast) begin
-                            if (packet_fifo_tkeep >  {(TOTAL_HEADERS_BYTES){1'b0}, (DATA_WIDTH/8-TOTAL_HEADERS_BYTES){1'b1}}) begin
+                            if (packet_fifo_tkeep > {{TOTAL_HEADERS_BYTES{1'b0}}, {(DATA_WIDTH/8-TOTAL_HEADERS_BYTES){1'b1}}}) begin
                                 my_tx_state                     <= TX_TAIL;
                                 to_checksum_tx_axis_tkeep       <= {(DATA_WIDTH/8){1'b1}};
                                 to_checksum_tx_axis_tlast       <= 1'b0;
@@ -265,7 +274,7 @@ module tx_headers_prepend #(
                 TX_TAIL: begin
                     my_tx_state                     <= TX_HEAD;
                     to_checksum_tx_axis_tvalid      <= dst_connection_hit_hold;
-                    to_checksum_tx_axis_tdata       <= {(DATA_WIDTH-TOTAL_HEADERS_BITS){1'b0}, internal_reg};
+                    to_checksum_tx_axis_tdata       <= {{(DATA_WIDTH-TOTAL_HEADERS_BITS){1'b0}}, internal_reg};
                     to_checksum_tx_axis_tkeep       <= to_checksum_tx_axis_tkeep_tail;
                     to_checksum_tx_axis_tlast       <= 1'b1;
                 end
@@ -278,3 +287,4 @@ module tx_headers_prepend #(
 
 
 endmodule // tx_headers_prepend
+`default_nettype wire

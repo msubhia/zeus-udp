@@ -144,7 +144,7 @@ module fifo_axis_wrapper #(
                                                 // interface. The width of the data payload is an integer number
                                                 // of bytes.
 
-    .s_axis_tdest(s_axis_tdest),             // TDEST_WIDTH-bit input: TDEST: Provides routing information
+    .s_axis_tdest(),             // TDEST_WIDTH-bit input: TDEST: Provides routing information
                                                 // for the data stream.
 
     .s_axis_tid(),                 // TID_WIDTH-bit input: TID: The data stream identifier that

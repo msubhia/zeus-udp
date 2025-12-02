@@ -1,6 +1,8 @@
 `default_nettype none
 `timescale 1ns/1ps
 
+`include "zeus_rpc.svh"
+
 // ============================================================================
 // Ethernet TX IP
 // ============================================================================
@@ -115,6 +117,10 @@ module ethernet_tx #(
     logic payload_length_fifo_tvalid;
     logic [IP_PACKET_LENGTH_WIDTH-1:0] payload_length_fifo_tdata;
 
+    logic [IP_PACKET_LENGTH_WIDTH-1:0]      current_total_length;
+    logic [IP_PACKET_LENGTH_WIDTH-1:0]      current_total_length_post;
+    logic                                   current_total_length_post_valid;
+    
     fifo_axis_wrapper #(
         .FIFO_DEPTH(64),
         .TDATA_WIDTH(DATA_WIDTH)
@@ -183,10 +189,6 @@ module ethernet_tx #(
     // Note: the packet fifo is the one that supposed to fill first
     // so no case where we drop a length or connection metadata because the backpressure is not handles
     assign udp_tx_axis_tready = ready_packet_fifo & ready_connection_metadata_fifo & ready_length_metadata_fifo;
-
-    logic [IP_PACKET_LENGTH_WIDTH-1:0]      current_total_length;
-    logic [IP_PACKET_LENGTH_WIDTH-1:0]      current_total_length_post;
-    logic                                   current_total_length_post_valid;
 
     always_ff @(posedge tx_axis_aclk) begin
         
