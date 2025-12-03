@@ -88,7 +88,7 @@ module tx_headers_prepend #(
     localparam int IP_ADDR_WIDTH                = 32,
     localparam int MAC_ADDR_WIDTH               = 48,
     localparam int UDP_PORT_WIDTH               = 16,
-    localparam int CONNECTION_META_WIDTH        = IP_ADDR_WIDTH + MAC_ADDR_WIDTH + UDP_PORT_WIDTH + 1,
+    localparam int CONNECTION_META_WIDTH        = IP_ADDR_WIDTH + MAC_ADDR_WIDTH + UDP_PORT_WIDTH + 8,
     localparam int IP_PACKET_LENGTH_WIDTH       = 16,
     localparam int ETH_HEADER_BYTES             = 14,
     localparam int IP_HEADER_BYTES              = 20,

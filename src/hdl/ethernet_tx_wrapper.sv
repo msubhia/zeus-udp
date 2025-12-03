@@ -64,16 +64,21 @@ module ethernet_tx_wrapper #(
     output wire [4:0]   m02_axis_tstrb
 );
 
-    logic                       s01_axis_rv_lookup_valid;
-    logic [CONN_ID_WIDTH-1:0]   s01_axis_rv_lookup_connectionId;
-    logic                       s01_axis_rv_lookup_ready;
+    logic                           s01_axis_rv_lookup_valid;
+    logic [CONN_ID_WIDTH-1:0]       s01_axis_rv_lookup_connectionId;
+    logic                           s01_axis_rv_lookup_ready;
 
-    logic                       m01_axis_rv_lookup_ready;
-    logic                       m01_axis_rv_lookup_valid;
-    logic                       m01_axis_rv_lookup_hit;
-    logic [MAC_ADDR_WIDTH:0]    m01_axis_rv_lookup_macAddr;
-    logic [IP_ADDR_WIDTH:0]     m01_axis_rv_lookup_ipAddr;
-    logic [UDP_PORT_WIDTH:0]    m01_axis_rv_lookup_udpPort;
+    logic                           m01_axis_rv_lookup_ready;
+    logic                           m01_axis_rv_lookup_valid;
+    logic                           m01_axis_rv_lookup_hit;
+    logic [MAC_ADDR_WIDTH-1:0]      m01_axis_rv_lookup_macAddr;
+    logic [IP_ADDR_WIDTH-1:0]       m01_axis_rv_lookup_ipAddr;
+    logic [UDP_PORT_WIDTH-1:0]      m01_axis_rv_lookup_udpPort;
+
+
+    assign m02_axis_tlast = 1'b1;
+    assign m02_axis_tstrb = ~('b0);
+    assign m02_axis_tdata[31:CONN_ID_WIDTH+2]   = 'b0;
 
     connection_manager #(
         .WAYS(WAYS),
@@ -145,10 +150,10 @@ module ethernet_tx_wrapper #(
         .cmac_tx_axis_tvalid(m00_axis_tvalid),
         .cmac_tx_axis_tlast(m00_axis_tlast),
 
-        .udp_tx_axis_connection_id(s00_axis_tdata[543:512]),
+        .udp_tx_axis_connection_id(s00_axis_tdata[529:512]),
         .udp_tx_axis_tready(s00_axis_tready),
         .udp_tx_axis_tdata(s00_axis_tdata[511:0]),
-        .udp_tx_axis_tkeep(s00_axis_tstrb),
+        .udp_tx_axis_tkeep(s00_axis_tstrb[63:0]),
         .udp_tx_axis_tvalid(s00_axis_tvalid),
         .udp_tx_axis_tlast(s00_axis_tlast),
 

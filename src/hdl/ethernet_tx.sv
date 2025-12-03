@@ -120,7 +120,7 @@ module ethernet_tx #(
     logic [IP_PACKET_LENGTH_WIDTH-1:0]      current_total_length;
     logic [IP_PACKET_LENGTH_WIDTH-1:0]      current_total_length_post;
     logic                                   current_total_length_post_valid;
-    
+
     fifo_axis_wrapper #(
         .FIFO_DEPTH(64),
         .TDATA_WIDTH(DATA_WIDTH)
@@ -154,7 +154,7 @@ module ethernet_tx #(
 
         .s_aclk(tx_axis_aclk),
         .s_aresetn(tx_axis_aresetn),
-        .s_axis_tdata({s01_axis_rv_lookup_hit, s01_axis_rv_lookup_macAddr, s01_axis_rv_lookup_udpPort, s01_axis_rv_lookup_ipAddr}),
+        .s_axis_tdata({7'b0, s01_axis_rv_lookup_hit, s01_axis_rv_lookup_macAddr, s01_axis_rv_lookup_udpPort, s01_axis_rv_lookup_ipAddr}),
         .s_axis_tkeep({(CONNECTION_META_WIDTH/8){1'b1}}),
         .s_axis_tlast(1'b1),
         .s_axis_tvalid(s01_axis_rv_lookup_valid /*& tx_engine_enable & (!tx_engine_bypass)*/),
