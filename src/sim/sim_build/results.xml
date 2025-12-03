@@ -1,6 +1,0 @@
-<testsuites name="results">
-  <testsuite name="all" package="all">
-    <property name="random_seed" value="1764480357" />
-    <testcase name="ethernet_rx_basic_test" classname="ethernet_rx_tb" file="/Users/menaf/Downloads/dev/mit/classes/fa25/6.s965/zeus-rpc/src/sim/ethernet_rx_tb.py" lineno="362" time="1.7255797386169434" sim_time_ns="40036.001" ratio_time="23201.478380876768" />
-  </testsuite>
-</testsuites>
