@@ -55,7 +55,7 @@ class AXIS_Monitor(BusMonitor):
             "axis_tready",
             "axis_tlast",
             "axis_tdata",
-            "axis_tstrb",
+            "axis_tkeep",
         ]
         BusMonitor.__init__(self, dut, name, clk, callback=callback)
         self.clock = clk
@@ -81,7 +81,7 @@ class AXIS_Monitor(BusMonitor):
             ready = self.bus.axis_tready.value
             last = self.bus.axis_tlast.value
             data = self.bus.axis_tdata.value  # .signed_integer
-            strb = self.bus.axis_tstrb.value
+            strb = self.bus.axis_tkeep.value
             if valid and ready:
                 self.transactions += 1
                 thing = dict(
@@ -106,7 +106,7 @@ class AXIS_Driver(BusDriver):
             "axis_tready",
             "axis_tlast",
             "axis_tdata",
-            "axis_tstrb",
+            "axis_tkeep",
         ]
         BusDriver.__init__(self, dut, name, clk)
         self.clock = clk
@@ -117,7 +117,7 @@ class M_AXIS_Driver(AXIS_Driver):
     def __init__(self, dut, name, clk):
         super().__init__(dut, name, clk)
         self.bus.axis_tdata.value = 0
-        self.bus.axis_tstrb.value = 0xF
+        self.bus.axis_tkeep.value = 0xF
         self.bus.axis_tlast.value = 0
         self.bus.axis_tvalid.value = 0
 
@@ -140,7 +140,7 @@ class M_AXIS_Driver(AXIS_Driver):
             await falling_edge
             data = contents["data"]
             self.bus.axis_tdata.value = data
-            self.bus.axis_tstrb.value = contents["strb"]
+            self.bus.axis_tkeep.value = contents["strb"]
             self.bus.axis_tlast.value = contents["last"]
             self.bus.axis_tvalid.value = 1
             while True:
@@ -176,7 +176,7 @@ class S_AXIS_Driver(BusDriver):
             "axis_tready",
             "axis_tlast",
             "axis_tdata",
-            "axis_tstrb",
+            "axis_tkeep",
         ]
         AXIS_Driver.__init__(self, dut, name, clk)
         self.bus.axis_tready.value = 0
@@ -310,6 +310,9 @@ current_eframe_bytes = bytearray()
 actual_packets = []
 current_aframe_bytes = bytearray()
 
+expected_length_match = []
+actual_length_match = []
+
 
 def packet_model(packet_transaction):
     # reconstruct the byte version of a packet given an input transaction
@@ -321,7 +324,7 @@ def packet_model(packet_transaction):
     strb = packet_transaction["strb"]
     tlast = packet_transaction["last"]
 
-    # condense all the bytes from tdata and tstrb
+    # condense all the bytes from tdata and tkeep
     num_bytes = len(strb)
     for i in range(num_bytes):
         if strb[i]:
@@ -333,7 +336,7 @@ def packet_model(packet_transaction):
         current_eframe_bytes = bytearray()
 
 
-def process_packet(packet):
+def process_packet(packet, tlast_callback=None):
     # reconstruct the byte version of a packet given an output transaction
     global actual_packets
     global current_aframe_bytes
@@ -343,7 +346,7 @@ def process_packet(packet):
     strb = packet["strb"]
     tlast = packet["last"]
 
-    # condense all the bytes from tdata and tstrb
+    # condense all the bytes from tdata and tkeep
     num_bytes = len(strb)
     for i in range(num_bytes):
         if strb[i]:
@@ -353,13 +356,15 @@ def process_packet(packet):
         # construct a udp pck from the bytes and extract its payload
         actual_packets.append(current_aframe_bytes)
         current_aframe_bytes = bytearray()
+        if tlast_callback:
+            tlast_callback()
 
 
 ########################################################################################################
 ########################################################################################################
 
 
-@cocotb.test()
+# @cocotb.test()
 async def ethernet_rx_basic_test(dut):
     """Basic test for ethernet_rx module"""
 
@@ -384,9 +389,21 @@ async def ethernet_rx_basic_test(dut):
     )
     dut.my_config.value = config_raw_binary
 
+    def dut_tlast_callback():
+        # checking that at the tlast cycle the length check is passing
+        assert dut.m_axis_length_valid.value, "Length check failed at tlast"
+        dut._log.info("Received packet!")
+
     # establish monitors on AXIS channels
     inm = AXIS_Monitor(dut, "s", dut.aclk, callback=packet_model)
-    outm = AXIS_Monitor(dut, "m", dut.aclk, callback=process_packet)
+    outm = AXIS_Monitor(
+        dut,
+        "m",
+        dut.aclk,
+        callback=lambda x: process_packet(
+            x,
+        ),
+    )
 
     dut.m_axis_tready.value = 1  # always ready
 
@@ -442,42 +459,7 @@ async def ethernet_rx_basic_test(dut):
     # // tdata[335:328]= 0x00
     # // tdata[343:336]= 0xDE   // UDP Payload byte
     # // tdata[351:344]= 0xAD
-    # // tdata[359:352]= 0xBE
-    # // tdata[367:360]= 0xEF
-    # // tdata[375:368]= 0xCA
-    # // tdata[383:376]= 0xFE
-    # // tdata[391:384]= 0xBA
-    # // tdata[399:392]= 0xBE
-
-    # test frame data in 32-bit words (from your comment mapping)
-    test_frame = [
-        # 0x44332211,
-        # 0x66554433,
-        # 0xFFEEDDCC,
-        # 0x000808FF,
-        # 0x002C0045,
-        # 0x46461C00,
-        # 0x11404000,
-        # 0xE6B1A8C0,
-        # 0x6501A8C0,
-        # 0xD2043500,
-        # 0x18000000,
-        # 0xEFBEADDE,
-        # 0xBEBAFECA,
-        0x03040201,
-        0x07060504,
-        0x0B0A0908,
-        0x0F0E0D0C,
-        0x13121110,
-        0x17161514,
-        0x1B1A1918,
-        0x1F1E1D1C,
-        0x23222120,
-        0x27262524,
-        0x2B2A2928,
-        0x2F2E2D2C,
-        0x33323130,
-    ]
+    # .....
 
     # construct a raw udp packet with a payload of size 10 bytes and make sure the strb accounts for that
     N = 100
@@ -488,27 +470,7 @@ async def ethernet_rx_basic_test(dut):
             random_payload.append(random.randint(0, 255))
 
         payload_bytes = bytes(random_payload)
-        # transaction = next(
-        # 	construct_axis_frame(
-        # 		generate_packet(
-        # 			src_mac="AA:BB:CC:DD:EE:FF",
-        # 			dst_mac="11:22:33:44:55:66",
-        # 			src_ip="192.168.1.100",
-        # 			dst_ip="192.168.1.101",
-        # 			src_port=1234,
-        # 			dst_port=53,
-        # 			payload_byte_array=payload_bytes,
-        # 		)
-        # 	)
-        # )
 
-        # # send the test frame
-        # s_axis_driver.append(
-        # 	{
-        # 		"type": "write_single",
-        # 		"contents": transaction,
-        # 	}
-        # )
         frame_transaction_gen = construct_axis_frame(
             generate_packet(
                 src_mac="AA:BB:CC:DD:EE:FF",
@@ -542,6 +504,135 @@ async def ethernet_rx_basic_test(dut):
         act_payload = bytes(actual_packets[i])
         # dut._log.info(f"Expected packet {i}: {exp_payload.hex()}")
         # dut._log.info(f"Actual packet {i}:   {act_payload.hex()}")
+        assert exp_payload == act_payload, f"Packet {i} payload mismatch"
+
+
+########################################################################################################
+########################################################################################################
+
+
+@cocotb.test()
+async def test_with_packets_length_mismatch(dut):
+    """Basic test for ethernet_rx module"""
+
+    # setup clock
+    clock = Clock(dut.aclk, 4, units="ns")  # 250MHz
+    cocotb.start_soon(clock.start())
+
+    global expected_packets
+    global actual_packets
+    expected_packets = []
+    actual_packets = []
+
+    global expected_length_match
+    global actual_length_match
+    expected_length_match = []
+    actual_length_match = []
+
+    # reset
+    await reset(dut.aclk, dut.aresetn, cycles_held=10, polarity=0)
+
+    dut._log.info("Reset complete")
+    # my config struct definition
+    # typedef struct packed {
+    #   logic [MAC_ADDR_SIZE-1:0] mac_addr;
+    #   logic [31:0]              ip_addr;
+    #   logic [15:0]              port;
+    # } connection_config_t;
+
+    config_raw_binary = BinaryValue(n_bits=48 + 32 + 16)
+    config_raw_binary.buff = (
+        b"\x11\x22\x33\x44\x55\x66" + b"\xc0\xa8\x01\x65" + b"\x00\x35"
+    )
+    dut.my_config.value = config_raw_binary
+
+    def dut_tlast_callback():
+        # checking that at the tlast cycle the length check is passing
+        # assert dut.m_axis_length_valid.value, "Length check failed at tlast"
+        actual_length_match.append(int(dut.m_axis_length_valid.value))
+        dut._log.info("Received packet!")
+
+    # establish monitors on AXIS channels
+    inm = AXIS_Monitor(dut, "s", dut.aclk, callback=packet_model)
+    outm = AXIS_Monitor(
+        dut,
+        "m",
+        dut.aclk,
+        callback=lambda x: process_packet(x, dut_tlast_callback),
+    )
+
+    dut.m_axis_tready.value = 1  # always ready
+
+    # establish drivers on AXIS channels
+    s_axis_driver = M_AXIS_Driver(dut, "s", dut.aclk)
+
+    # construct a raw udp packet with a payload of size 10 bytes and make sure the strb accounts for that
+    payload_intended_sizes = []
+    N = 11
+    for k in range(2):
+        for i in range(N):
+            random_payload = []
+            payload_size = random.randint(100, 1000)
+            payload_intended_sizes.append(payload_size)
+            for j in range(payload_size):
+                random_payload.append(random.randint(0, 255))
+
+            payload_bytes = bytes(random_payload)
+
+            frame_transaction_gen = construct_axis_frame(
+                generate_packet(
+                    src_mac="AA:BB:CC:DD:EE:FF",
+                    dst_mac="11:22:33:44:55:66",
+                    src_ip="192.168.1.100",
+                    dst_ip="192.168.1.101",
+                    src_port=1234,
+                    dst_port=53,
+                    payload_byte_array=payload_bytes,
+                )
+            )
+            actually_dropped = 0
+            drop_transaction = random.choice([0, 1])
+            transactions = list(frame_transaction_gen)
+            for i, transaction in enumerate(transactions):
+                if i != 0 and i != len(transactions) - 1 and drop_transaction:
+                    drop_transaction = 0
+                    actually_dropped = 1
+                    continue
+                # send the test frame
+                # ensure we're not dropping tlast or first
+                s_axis_driver.append(
+                    {
+                        "type": "write_single",
+                        "contents": transaction,
+                    }
+                )
+                if random.choice([0, 1, 2]) == 0:
+                    # if 0:
+                    s_axis_driver.append(
+                        {"type": "pause", "duration": random.randint(1, 10)}
+                    )
+
+                expected_length_match.append(int(not actually_dropped))
+
+    s_axis_driver.append({"type": "pause", "duration": 100})
+
+    await ClockCycles(dut.aclk, 10000)
+    print(f"Expected packets: {len(expected_packets)}")
+    print(f"Actual packets: {len(actual_packets)}")
+    for i in range(len(expected_packets)):
+        exp_payload = bytes(expected_packets[i])
+        act_payload = bytes(actual_packets[i])
+        # dut._log.info(f"Expected packet {i}: {exp_payload.hex()}")
+        # dut._log.info(f"Actual packet {i}:   {act_payload.hex()}")
+
+        dut._log.info(
+            f"Packet {i} expected length: {len(exp_payload)}, actual length: {len(act_payload)}"
+        )
+        if actual_length_match[i] != (payload_intended_sizes[i] == len(act_payload)):
+            dut._log.error(
+                f"Length match flag mismatch for packet {i}: expected {expected_length_match[i]}, actual {actual_length_match[i]}"
+            )
+            dut._log.error(f"Payload intended size: {payload_intended_sizes[i]}")
         assert exp_payload == act_payload, f"Packet {i} payload mismatch"
 
 

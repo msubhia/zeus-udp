@@ -62,6 +62,14 @@
 // filter based on the src information (goes into the module)
 // filter based ont the dest information (coming from config given to the ethernet rx module)
 
+
+// TODOs: 
+// take out connection manager module instantiation to a higher level module
+// fix length check bug
+// add checksum support
+// add disable and passthrough signals
+// make connection id a premable for the first packet
+
 module ethernet_rx #(
     parameter int DATA_WIDTH = 512,
     parameter int KEEP_WIDTH = DATA_WIDTH / 8,
@@ -77,7 +85,7 @@ module ethernet_rx #(
 
     //////// RX ////////
     input  logic [DATA_WIDTH-1:0] s_axis_tdata,
-    input  logic [KEEP_WIDTH-1:0] s_axis_tstrb,
+    input  logic [KEEP_WIDTH-1:0] s_axis_tkeep,
     input  logic                  s_axis_tvalid,
     output logic                  s_axis_tready,
     input  logic                  s_axis_tlast,
@@ -87,8 +95,8 @@ module ethernet_rx #(
     // OUTPUT
     // ----------------------------------------------------------------
     output logic [DATA_WIDTH-1:0] m_axis_tdata,
-    output logic [KEEP_WIDTH-1:0] m_axis_tstrb,
-    output logic [CONNECTION_ID_WIDTH - 1:0] m_axis_connection_id,
+    output logic [CONNECTION_ID_WIDTH-1:0] m_axis_connection_id,
+    output logic [KEEP_WIDTH-1:0] m_axis_tkeep,
     output logic                             m_axis_length_valid, // if tlast is high and this is low, some bytes were dropped either from source or in logic itself (i.e. UDP packet length != transmitted length)
     output logic m_axis_tvalid,
     input logic m_axis_tready,
@@ -113,7 +121,13 @@ module ethernet_rx #(
     // ----------------------------------------------------------------
     // DEST CONFIG
     // ----------------------------------------------------------------
-    input connection_config_t my_config
+    input connection_config_t my_config,
+
+    // ----------------------------------------------------------------
+    // DEBUG SIGNALS
+    // ----------------------------------------------------------------
+    input logic dbypass,
+    input logic ddisable
 );
 
   logic [MAC_ADDR_SIZE-1:0] my_mac_addr;
@@ -146,11 +160,11 @@ module ethernet_rx #(
   } state_t;
 
 
-  state_t state, state_next;
+  state_t state, prev_state;
   logic prev_tlast, is_packet_beginning;
 
   logic payload_valid, ppayload_valid, payload_tlast, ppayload_tlast;
-  logic [KEEP_WIDTH-1:0] payload_tstrb, ppayload_tstrb;
+  logic [KEEP_WIDTH-1:0] payload_tkeep, ppayload_tkeep;
 
   header_t header, current_header;
   logic [KEEP_WIDTH-1:0][7:0] payload, ppayload, s_axis_tdata_bytes;
@@ -158,8 +172,10 @@ module ethernet_rx #(
   logic connection_valid;
   logic [31:0] connection_id, connection_id_reg;
   logic connection_hit, connection_hit_reg;
-  logic [15:0] udp_payload_length;
-  logic [15:0] udp_payload_counter;
+  logic [15:0] udp_payload_length, udp_payload_length_reg;
+  logic [15:0] udp_payload_counter, udp_payload_counter_reg;
+  logic udp_payload_regs_valid;
+
   logic connection_id_lookup_valid;
 
   connection_manager #(
@@ -210,19 +226,37 @@ module ethernet_rx #(
   // connection hit (automatically pipelined through the register above)
   // udp payload length
   // payload register data
-  // payload output tstrb 
+  // payload output tkeep 
 
-  logic payload_length_valid, ppayload_length_valid;
+  logic payload_length_valid, payload_tlast_2, payload_length_valid_2, ppayload_length_valid;
 
-  assign payload_length_valid = prev_tlast && (udp_payload_counter == udp_payload_length);
+  //   assign payload_length_valid = (udp_payload_counter == udp_payload_length);
   pipeline #(
       .DATA_WIDTH(1 + 1 + 1 + 512 + KEEP_WIDTH),
       .STAGES(3)
   ) payload_pipeline (
       .clk_in(aclk),
-      .data({payload_length_valid, payload_tlast, payload_valid, payload, payload_tstrb}),
-      .data_out({ppayload_length_valid, ppayload_tlast, ppayload_valid, ppayload, m_axis_tstrb})
+      .data({payload_valid, payload, payload_tkeep}),
+      .data_out({ppayload_valid, ppayload, m_axis_tkeep})
   );
+
+  pipeline #(
+      .DATA_WIDTH(2),
+      .STAGES(2)
+  ) payload_length_valid_pipeline (
+      .clk_in(aclk),
+      .data({payload_length_valid_2, payload_tlast_2}),
+      .data_out({ppayload_length_valid, ppayload_tlast})
+  );
+
+
+  // for delayed update conditions
+  always_ff @(posedge aclk) begin
+    // payload_length_valid_2 <= (prev_transaction && !transaction) ? udp_payload_counter == udp_payload_length : payload_length_valid;
+    // payload_tlast_2 <= payload_tlast;
+    payload_length_valid_2 <= payload_length_valid_r;
+    payload_tlast_2 <= payload_tlast;
+  end
 
 
   // output channel assignments
@@ -234,13 +268,13 @@ module ethernet_rx #(
 
 
 
-  // tstrb checks
+  // tkeep checks
   // header bytes = 52 bytes
-  logic tstrb_prefix_ok;
-  logic tstrb_suffix_ok;
+  logic tkeep_prefix_ok;
+  logic tkeep_suffix_ok;
 
-  assign tstrb_prefix_ok = s_axis_tstrb[512/8-1: 512/8 -  HEADER_PAYLOAD_SIZE_BYTES] == {({HEADER_PAYLOAD_SIZE_BYTES{1'b1}})}; // want all header bytes to be present
-  assign tstrb_suffix_ok = (s_axis_tstrb[KEEP_WIDTH-1: 52] != {KEEP_WIDTH-52{1'b0}}); // want at least one byte in the payload
+  assign tkeep_prefix_ok = s_axis_tkeep[512/8-1: 512/8 -  HEADER_PAYLOAD_SIZE_BYTES] == {({HEADER_PAYLOAD_SIZE_BYTES{1'b1}})}; // want all header bytes to be present
+  assign tkeep_suffix_ok = (s_axis_tkeep[KEEP_WIDTH-1: 52] != {KEEP_WIDTH-52{1'b0}}); // want at least one byte in the payload
 
 
   logic [47:0] dst_addr;
@@ -281,8 +315,8 @@ module ethernet_rx #(
 
   assign first_cycle_header_valid =
 	mac_ok & 
-    tstrb_prefix_ok &
-    tstrb_suffix_ok &
+    tkeep_prefix_ok &
+    tkeep_suffix_ok &
     mac_ok &
     eth_ok &
     ipv4_ok &
@@ -294,7 +328,7 @@ module ethernet_rx #(
 
 
   assign single_cycle_udp_payload_len_ok = header.udp_hdr.length - UDP_HDR_BYTES == $countones(
-      tstrb_leftover
+      tkeep_leftover
   );
 
 
@@ -302,35 +336,58 @@ module ethernet_rx #(
   logic [HEADER_PAYLOAD_SIZE_BYTES*8-1:0] payload_leftover_flat;
   logic payload_leftover_valid;
   assign payload_leftover_flat = header.payload_start;
-  logic [HEADER_PAYLOAD_SIZE_BYTES-1:0] tstrb_leftover;
-  logic [HEADER_PAYLOAD_SIZE_BYTES-1:0] tstrb_leftover_flat;
-  assign tstrb_leftover_flat = s_axis_tstrb[HEADER_PAYLOAD_SIZE_BYTES-1:0];
+  logic [HEADER_PAYLOAD_SIZE_BYTES-1:0] tkeep_leftover;
+  logic [HEADER_PAYLOAD_SIZE_BYTES-1:0] tkeep_leftover_flat;
+  assign tkeep_leftover_flat = s_axis_tkeep[HEADER_PAYLOAD_SIZE_BYTES-1:0];
 
   logic [15:0] payload_leftover_byte_count;
-  assign payload_leftover_byte_count = $countones(tstrb_leftover);
+  assign payload_leftover_byte_count = $countones(tkeep_leftover);
   logic [15:0] total_active_bytes;
-  assign total_active_bytes = $countones(s_axis_tstrb);
+  assign total_active_bytes = $countones(s_axis_tkeep);
 
 
-  logic transaction;
+  logic transaction, prev_transaction;
   assign transaction = s_axis_tvalid && s_axis_tready;
 
+  logic fast_length_check, length_check;
+  logic [15:0] fast_udp_length;
+  assign fast_udp_length = udp_payload_counter + total_active_bytes;
+
+  assign fast_length_check = (fast_udp_length) == udp_payload_length;
+  assign payload_length_valid = udp_payload_counter == udp_payload_length;
+
+  logic payload_length_valid_r;
+
+  logic [15:0] debug_packet_count;
 
   always_ff @(posedge aclk) begin
     if (!aresetn) begin
       state <= IDLE;
       prev_tlast <= 1'b1;
       connection_id_lookup_valid <= 0;
-      tstrb_leftover <= '0;
+      tkeep_leftover <= '0;
       payload_leftover <= '0;
       payload_leftover_valid <= 1'b0;
       payload_tlast <= 0;
       payload_valid <= 0;
-      payload_tstrb <= '0;
+      payload_tkeep <= '0;
       payload <= 0;
       udp_payload_length <= 16'b0;
       udp_payload_counter <= 16'b0;
+      payload_length_valid_r <= 1'b0;
+      debug_packet_count <= 16'b0;
     end else begin
+      if (transaction) begin
+        debug_packet_count <= debug_packet_count + (is_packet_beginning ? 1 : 0);
+      end
+
+      if (is_packet_beginning && transaction && prev_tlast) begin
+        payload_length_valid_r <= udp_payload_counter + total_active_bytes == udp_payload_length;
+      end else begin
+        payload_length_valid_r <= payload_length_valid;
+      end
+
+      prev_transaction <= transaction;
 
       if (transaction) begin
         prev_tlast <= s_axis_tlast;
@@ -356,7 +413,7 @@ module ethernet_rx #(
 
             for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
               payload_leftover[i] <= payload_leftover_flat[(i+1)*8-1-:8];
-              tstrb_leftover[i]   <= tstrb_leftover_flat[i];
+              tkeep_leftover[i]   <= tkeep_leftover_flat[i];
             end
             payload_leftover_valid <= 1'b1;
 
@@ -364,10 +421,10 @@ module ethernet_rx #(
               // leftover always goes in the first bytes of the actual payload
               for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                 payload[i] <= payload_leftover[i];
-                payload_tstrb[i] <= tstrb_leftover[i];
+                payload_tkeep[i] <= tkeep_leftover[i];
               end
               for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload_tstrb[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
+                payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
               end
               payload_valid <= 1'b1;
               payload_tlast <= prev_tlast;
@@ -379,16 +436,17 @@ module ethernet_rx #(
               // leftover always goes in the first bytes of the actual payload
               for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                 payload[i] <= payload_leftover[i];
-                payload_tstrb[i] <= tstrb_leftover[i];
+                payload_tkeep[i] <= tkeep_leftover[i];
               end
               for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload_tstrb[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
+                payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
               end
               payload_valid <= 1'b1;
               payload_tlast <= prev_tlast;
               payload_leftover_valid <= 1'b0;
             end else begin
               payload_valid <= 0;
+              payload_tlast <= 0;
             end
           end
           // otherwise we stay in idle 
@@ -397,26 +455,14 @@ module ethernet_rx #(
         ACCUMULATING_PAYLOAD: begin
           connection_id_lookup_valid <= 1'b0;
           if (transaction) begin
-            // if (s_axis_tlast) begin
-            //   state <= IDLE;
-            // end
-            // // put the rest of the payload in payload leftover
-            // udp_payload_counter <= udp_payload_counter + total_active_bytes;
-            // if (payload_leftover_valid) begin
-            //   payload_leftover_valid <= 1'b0;  // will be flushed by next cycle
-            // end
-
             if (is_packet_beginning && first_cycle_header_valid) begin
               // update the leftover registers
               for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                 payload_leftover[i] <= payload_leftover_flat[(i+1)*8-1-:8];
-                tstrb_leftover[i]   <= tstrb_leftover_flat[i];
+                tkeep_leftover[i]   <= tkeep_leftover_flat[i];
               end
               payload_leftover_valid <= 1'b1;
 
-              // TODO(menaf): this causes a length comparison bug... need to fix this with some delayed assignment of UDP_PAYLOAD_LENGTH and UDP_PAYLOAD_COUNTER
-
-              // if accumulating, save the expected and current payload count from header								 
               udp_payload_length <= header.udp_hdr.length - UDP_HDR_BYTES;
               udp_payload_counter <= total_active_bytes - HEADER_SIZE_BYTES;
 
@@ -424,10 +470,10 @@ module ethernet_rx #(
                 // start a new packet while still having leftover from previous one
                 for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                   payload[i] <= payload_leftover[i];
-                  payload_tstrb[i] <= tstrb_leftover[i];
+                  payload_tkeep[i] <= tkeep_leftover[i];
                 end
                 for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                  payload_tstrb[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
+                  payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
                 end
                 payload_valid <= 1'b1;
                 payload_tlast <= prev_tlast;
@@ -439,17 +485,17 @@ module ethernet_rx #(
 
                 for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                   payload[KEEP_WIDTH-1-i] <= payload_leftover[HEADER_PAYLOAD_SIZE_BYTES-1-i];
-                  payload_tstrb[KEEP_WIDTH-1-i] <= tstrb_leftover[HEADER_PAYLOAD_SIZE_BYTES-1-i];
+                  payload_tkeep[KEEP_WIDTH-1-i] <= tkeep_leftover[HEADER_PAYLOAD_SIZE_BYTES-1-i];
                 end
 
                 for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                   payload[KEEP_WIDTH-1 - (HEADER_PAYLOAD_SIZE_BYTES+i)] <= s_axis_tdata_bytes[KEEP_WIDTH-1-i];
-                  payload_tstrb[KEEP_WIDTH-1 - (HEADER_PAYLOAD_SIZE_BYTES+i)] <= s_axis_tstrb[KEEP_WIDTH-1-i];
+                  payload_tkeep[KEEP_WIDTH-1 - (HEADER_PAYLOAD_SIZE_BYTES+i)] <= s_axis_tkeep[KEEP_WIDTH-1-i];
                 end
 
                 for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                   payload_leftover[i] <= payload_leftover_flat[(i+1)*8-1-:8];
-                  tstrb_leftover[i]   <= tstrb_leftover_flat[i];
+                  tkeep_leftover[i]   <= tkeep_leftover_flat[i];
                 end
 
                 payload_tlast <= prev_tlast;
@@ -461,11 +507,12 @@ module ethernet_rx #(
                 // passthrough behavior
                 for (int i = 0; i < KEEP_WIDTH; i++) begin
                   payload[i] <= s_axis_tdata_bytes[i];
-                  payload_tstrb[i] <= s_axis_tstrb[i];
+                  payload_tkeep[i] <= s_axis_tkeep[i];
                 end
 
                 payload_tlast <= s_axis_tlast;
               end
+              // udp payload counter update
               udp_payload_counter <= udp_payload_counter + total_active_bytes;
               payload_valid <= 1'b1;
 
@@ -479,11 +526,11 @@ module ethernet_rx #(
             if (payload_leftover_valid) begin
               for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
                 payload[i] <= payload_leftover[i];
-                payload_tstrb[i] <= tstrb_leftover[i];
+                payload_tkeep[i] <= tkeep_leftover[i];
               end
 
               for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload_tstrb[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
+                payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
               end
 
               payload_valid <= 1'b1;
@@ -493,6 +540,7 @@ module ethernet_rx #(
               payload_leftover_valid <= 1'b0;
             end else begin
               payload_valid <= 0;
+              payload_tlast <= 0;
             end
           end
         end
