@@ -9,11 +9,17 @@
 //
 // Authors:          M.Subhi Abordan (msubhi_a@mit.edu)
 //                   Mena Filfil     (menaf@mit.edu)
-// Last Modified:    Dec 1, 2025
+// Last Modified:    Dec 3, 2025
 //
 // ============================================================================
 // END
 // ============================================================================
+
+function automatic logic [31:0] swap_bytes_4(input logic [31:0] din);
+    for (int i = 0; i < 4; i++) begin
+        swap_bytes_4[i*8 +: 8] = din[(4-1-i)*8 +: 8];
+    end
+endfunction
 
 module ethernet_tx #(
     parameter int DATA_WIDTH                    = 512,
@@ -41,8 +47,7 @@ module ethernet_tx #(
     // ----------------------------------------------------------------
     input wire                          tx_axis_aclk,
     input wire                          tx_axis_aresetn,
-    // input wire                          tx_engine_bypass,
-    // input wire                          tx_engine_enable,
+    input wire                          tx_engine_enable,
 
     // ----------------------------------------------------------------
     // CONNECTION CONFIGURATION
@@ -63,8 +68,6 @@ module ethernet_tx #(
     // ----------------------------------------------------------------
     // USER INPUT
     // ----------------------------------------------------------------
-    input wire [CONN_ID_WIDTH-1:0]      udp_tx_axis_connection_id,
-
     output logic                        udp_tx_axis_tready,
     input wire [DATA_WIDTH-1:0]         udp_tx_axis_tdata,
     input wire [DATA_WIDTH/8-1:0]       udp_tx_axis_tkeep,
@@ -137,7 +140,7 @@ module ethernet_tx #(
         .s_axis_tdata(udp_tx_axis_tdata),
         .s_axis_tkeep(udp_tx_axis_tkeep),
         .s_axis_tlast(udp_tx_axis_tlast),
-        .s_axis_tvalid(udp_tx_axis_tvalid /*& tx_engine_enable & (!tx_engine_bypass)*/),
+        .s_axis_tvalid(udp_tx_axis_tvalid & tx_engine_enable),
         .s_axis_tready(ready_packet_fifo)
     );
 
@@ -157,7 +160,7 @@ module ethernet_tx #(
         .s_axis_tdata({7'b0, s01_axis_rv_lookup_hit, s01_axis_rv_lookup_macAddr, s01_axis_rv_lookup_udpPort, s01_axis_rv_lookup_ipAddr}),
         .s_axis_tkeep({(CONNECTION_META_WIDTH/8){1'b1}}),
         .s_axis_tlast(1'b1),
-        .s_axis_tvalid(s01_axis_rv_lookup_valid /*& tx_engine_enable & (!tx_engine_bypass)*/),
+        .s_axis_tvalid(s01_axis_rv_lookup_valid & tx_engine_enable),
         .s_axis_tready(ready_connection_metadata_fifo)
     );
 
@@ -177,7 +180,7 @@ module ethernet_tx #(
         .s_axis_tdata(current_total_length_post),
         .s_axis_tkeep({(IP_PACKET_LENGTH_WIDTH/8){1'b1}}),
         .s_axis_tlast(1'b1),
-        .s_axis_tvalid(current_total_length_post_valid /*& tx_engine_enable & (!tx_engine_bypass)*/),
+        .s_axis_tvalid(current_total_length_post_valid & tx_engine_enable),
         .s_axis_tready(ready_length_metadata_fifo)
     );
 
@@ -233,7 +236,7 @@ module ethernet_tx #(
     end
 
     assign m01_axis_rv_lookup_valid         = udp_tx_axis_tvalid & udp_tx_axis_tready & is_first_transaction;
-    assign m01_axis_rv_lookup_connectionId  = udp_tx_axis_connection_id;
+    assign m01_axis_rv_lookup_connectionId  = swap_bytes_4(udp_tx_axis_tdata[31:0])[CONN_ID_WIDTH-1:0];
     assign s01_axis_rv_lookup_ready         = 1'b1;
 
 

@@ -15,7 +15,19 @@
 	)
 	(
 		// Users to add ports here
-
+		output wire [31:0] 	csr_udp_engine_100g__ctrl,
+		output wire [31:0] 	csr_udp_engine_100g__myConfig_macAddr_upper,
+		output wire [31:0] 	csr_udp_engine_100g__myConfig_macAddr_lower,
+		output wire [31:0] 	csr_udp_engine_100g__myConfig_ipAddr,
+		output wire [31:0] 	csr_udp_engine_100g__myConfig_udpPort,
+		output wire [31:0]  csr_udp_engine_100g__connManager_wr_macAddr_upper,
+		output wire [31:0]  csr_udp_engine_100g__connManager_wr_macAddr_lower,
+		output wire [31:0]  csr_udp_engine_100g__connManager_wr_ip_addr,
+		output wire [31:0]  csr_udp_engine_100g__connManager_wr_port,
+		output wire [31:0]  csr_udp_engine_100g__connManager_wr_bind,
+		output wire [31:0]  csr_udp_engine_100g__connManager_wr_trigger,
+		input  wire [31:0] 	csr_udp_engine_100g__connManager_wr_status,
+		input  wire [31:0] 	csr_udp_engine_100g__connManager_wr_connectedId,
 		// User ports ends
 		// Do not modify the ports beyond this line
 
@@ -227,9 +239,22 @@
 	// Slave register write enable is asserted when valid address and data are available
 	// and the slave is ready to accept the write address and write data.
 	 
+	// a write to reg 10 should make a trigger pulse
+	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_trigger;
+	assign csr_udp_engine_100g__connManager_wr_trigger = reg____csr_udp_engine_100g__connManager_wr_trigger;
 
 	always @( posedge S_AXI_ACLK )
 	begin
+
+		// ----------
+		// user added
+		reg____csr_udp_engine_100g__connManager_wr_trigger <=   
+			(S_AXI_WVALID) && 
+			(( (S_AXI_AWVALID)? S_AXI_AWADDR[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] : 
+								axi_awaddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB]		) == 10);
+
+		// ----------
+	
 	  if ( S_AXI_ARESETN == 1'b0 )
 	    begin
 	      slv_reg0 <= 0;
@@ -580,8 +605,63 @@
 	          end                                       
 	        end                                         
 	// Implement memory mapped register select and read logic generation
-	  assign S_AXI_RDATA = (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h0) ? slv_reg0 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1) ? slv_reg1 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h2) ? slv_reg2 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h3) ? slv_reg3 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h4) ? slv_reg4 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h5) ? slv_reg5 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h6) ? slv_reg6 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h7) ? slv_reg7 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h8) ? slv_reg8 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h9) ? slv_reg9 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hA) ? slv_reg10 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hB) ? slv_reg11 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hC) ? slv_reg12 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hD) ? slv_reg13 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hE) ? slv_reg14 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hF) ? slv_reg15 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h10) ? slv_reg16 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h11) ? slv_reg17 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h12) ? slv_reg18 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h13) ? slv_reg19 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h14) ? slv_reg20 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h15) ? slv_reg21 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h16) ? slv_reg22 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h17) ? slv_reg23 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h18) ? slv_reg24 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h19) ? slv_reg25 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1A) ? slv_reg26 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1B) ? slv_reg27 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1C) ? slv_reg28 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1D) ? slv_reg29 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1E) ? slv_reg30 : (axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1F) ? slv_reg31 : 0; 
+	  assign S_AXI_RDATA = 	(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h0) ? slv_reg0 : 
+	  						(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1) ? slv_reg1 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h2) ? slv_reg2 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h3) ? slv_reg3 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h4) ? slv_reg4 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h5) ? slv_reg5 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h6) ? slv_reg6 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h7) ? slv_reg7 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h8) ? slv_reg8 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h9) ? slv_reg9 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hA) ? slv_reg10 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hB) ? csr_udp_engine_100g__connManager_wr_status : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hC) ? csr_udp_engine_100g__connManager_wr_connectedId : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hD) ? slv_reg13 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hE) ? slv_reg14 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'hF) ? slv_reg15 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h10) ? slv_reg16 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h11) ? slv_reg17 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h12) ? slv_reg18 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h13) ? slv_reg19 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h14) ? slv_reg20 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h15) ? slv_reg21 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h16) ? slv_reg22 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h17) ? slv_reg23 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h18) ? slv_reg24 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h19) ? slv_reg25 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1A) ? slv_reg26 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1B) ? slv_reg27 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1C) ? slv_reg28 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1D) ? slv_reg29 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1E) ? slv_reg30 : 
+							(axi_araddr[ADDR_LSB+OPT_MEM_ADDR_BITS:ADDR_LSB] == 5'h1F) ? slv_reg31 : 0; 
 	// Add user logic here
+
+	reg [31:0] 	reg____csr_udp_engine_100g__ctrl;
+	reg [31:0] 	reg____csr_udp_engine_100g__myConfig_macAddr_upper;
+	reg [31:0] 	reg____csr_udp_engine_100g__myConfig_macAddr_lower;
+	reg [31:0] 	reg____csr_udp_engine_100g__myConfig_ipAddr;
+	reg [31:0] 	reg____csr_udp_engine_100g__myConfig_udpPort;
+	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_macAddr_upper;
+	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_macAddr_lower;
+	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_ip_addr;
+	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_port;
+	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_bind;
+
+	always @(*) begin
+		reg____csr_udp_engine_100g__ctrl							= slv_reg0;
+		reg____csr_udp_engine_100g__myConfig_macAddr_upper			= slv_reg1;
+		reg____csr_udp_engine_100g__myConfig_macAddr_lower			= slv_reg2;
+		reg____csr_udp_engine_100g__myConfig_ipAddr					= slv_reg3;
+		reg____csr_udp_engine_100g__myConfig_udpPort				= slv_reg4;
+		reg____csr_udp_engine_100g__connManager_wr_macAddr_upper	= slv_reg5;
+		reg____csr_udp_engine_100g__connManager_wr_macAddr_lower	= slv_reg6;
+		reg____csr_udp_engine_100g__connManager_wr_ip_addr			= slv_reg7;
+		reg____csr_udp_engine_100g__connManager_wr_port				= slv_reg8;
+		reg____csr_udp_engine_100g__connManager_wr_bind				= slv_reg9;
+	end
 
 	// User logic ends
 

@@ -2,12 +2,12 @@
 `timescale 1ns/1ps
 
 // ============================================================================
-// Ethernet TX IP
+// UDP Engine 100G IP
 // ============================================================================
 //
 // Authors:          M.Subhi Abordan (msubhi_a@mit.edu)
 //                   Mena Filfil     (menaf@mit.edu)
-// Last Modified:    Dec 2, 2025
+// Last Modified:    Dec 3, 2025
 //
 // ============================================================================
 // END
@@ -30,118 +30,264 @@ module udp_engine_100g #(
     parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
     parameter int CONNECTION_MANAGER_LATENCY    = 3,
 
+    parameter integer C_S_AXI_DATA_WIDTH	    = 32,
+	parameter integer C_S_AXI_ADDR_WIDTH	    = 7,
+
     localparam int IP_ADDR_WIDTH                = 32,
     localparam int MAC_ADDR_WIDTH               = 48,
     localparam int UDP_PORT_WIDTH               = 16
 ) (
-    input  wire                         rx_axis_aclk,
-    input  wire                         rx_axis_aresetn,
-    input  wire                         tx_axis_aclk,
-    input  wire                         tx_axis_aresetn,
-
+    // ----------------------------------------------------------------
+    // CLOCKS AND RESETS
+    // ----------------------------------------------------------------
+    input  wire                                 rx_axis_aclk,
+    input  wire                                 rx_axis_aresetn,
+    input  wire                                 tx_axis_aclk,
+    input  wire                                 tx_axis_aresetn,
+    input  wire  							    s_axi_aclk,
+	input  wire  							    s_axi_aresetn,
     // ----------------------------------------------------------------
     // CMAC INTERFACE (AXI-STREAM)
     // ----------------------------------------------------------------
 
     // RX Channel
-    input  wire [DATA_WIDTH-1:0]        cmac_rx_axis_tdata,
-    input  wire [KEEP_WIDTH-1:0]        cmac_rx_axis_tkeep,
-    input  wire                         cmac_rx_axis_tvalid,
-    input  wire                         cmac_rx_axis_tlast,
-    output logic                        cmac_rx_axis_tready,
+    input  wire [DATA_WIDTH-1:0]                cmac_rx_axis_tdata,
+    input  wire [KEEP_WIDTH-1:0]                cmac_rx_axis_tkeep,
+    input  wire                                 cmac_rx_axis_tvalid,
+    input  wire                                 cmac_rx_axis_tlast,
+    output logic                                cmac_rx_axis_tready,
 
     // TX Channel
-    output logic [DATA_WIDTH-1:0]       cmac_tx_axis_tdata,
-    output logic [KEEP_WIDTH-1:0]       cmac_tx_axis_tkeep,
-    output logic                        cmac_tx_axis_tvalid,
-    output logic                        cmac_tx_axis_tlast,
-    input  wire                         cmac_tx_axis_tready,
+    output logic [DATA_WIDTH-1:0]               cmac_tx_axis_tdata,
+    output logic [KEEP_WIDTH-1:0]               cmac_tx_axis_tkeep,
+    output logic                                cmac_tx_axis_tvalid,
+    output logic                                cmac_tx_axis_tlast,
+    input  wire                                 cmac_tx_axis_tready,
 
     // ----------------------------------------------------------------
     // UDP INTERFACE (AXI-STREAM)
     // ----------------------------------------------------------------
 
     // TX Channel
-    input wire  [CONN_ID_WIDTH-1:0]     udp_tx_axis_connection_id,
-    input  wire [DATA_WIDTH-1:0]        udp_tx_axis_tdata,
-    input  wire [KEEP_WIDTH-1:0]        udp_tx_axis_tkeep,
-    input  wire                         udp_tx_axis_tvalid,
-    input  wire                         udp_tx_axis_tlast,
-    output logic                        udp_tx_axis_tready,
+    input wire  [CONN_ID_WIDTH-1:0]             udp_tx_axis_connection_id,
+    input  wire [DATA_WIDTH-1:0]                udp_tx_axis_tdata,
+    input  wire [KEEP_WIDTH-1:0]                udp_tx_axis_tkeep,
+    input  wire                                 udp_tx_axis_tvalid,
+    input  wire                                 udp_tx_axis_tlast,
+    output logic                                udp_tx_axis_tready,
 
     // RX Channel
-    output logic [CONN_ID_WIDTH-1:0]    udp_rx_axis_connection_id,
-    output logic [DATA_WIDTH-1:0]       udp_rx_axis_tdata,
-    output logic [KEEP_WIDTH-1:0]       udp_rx_axis_tkeep,
-    output logic                        udp_rx_axis_tvalid,
-    output logic                        udp_rx_axis_tlast,
-    input  wire                         udp_rx_axis_tready,
+    output logic [CONN_ID_WIDTH-1:0]            udp_rx_axis_connection_id,
+    output logic [DATA_WIDTH-1:0]               udp_rx_axis_tdata,
+    output logic [KEEP_WIDTH-1:0]               udp_rx_axis_tkeep,
+    output logic                                udp_rx_axis_tvalid,
+    output logic                                udp_rx_axis_tlast,
+    input  wire                                 udp_rx_axis_tready,
 
     // ----------------------------------------------------------------
     // CONTROL INTERFACE (AXI-LITE)
     // ----------------------------------------------------------------
-    input wire      s_axi_ctrl_aclk,
-    input wire      s_axi_ctrl_aresetn,
-
-    input wire      s_axi_ctrl_awvalid,
-    input wire      s_axi_ctrl_awaddr,
-    output logic    s_axi_ctrl_awready,
-
-    input wire      s_axi_ctrl_wvalid,
-    input wire      s_axi_ctrl_wdata,
-    output logic    s_axi_ctrl_wready,
-
-    input wire      s_axi_ctrl_bready,
-    output logic    s_axi_ctrl_bvalid,
-    output logic    s_axi_ctrl_bresp,
-
-    input wire      s_axi_ctrl_arvalid,
-    input wire      s_axi_ctrl_araddr,
-    output logic    s_axi_ctrl_arready,
-
-    input wire      s_axi_ctrl_rready,
-    output logic    s_axi_ctrl_rvalid,
-    output logic    s_axi_ctrl_rdata,
-    output logic    s_axi_ctrl_rresp
+	input wire [C_S_AXI_ADDR_WIDTH-1 : 0] 	    s_axi_awaddr,
+	input wire [2 : 0] 						    s_axi_awprot,
+	input wire  							    s_axi_awvalid,
+	output logic  							    s_axi_awready,
+	input wire [C_S_AXI_DATA_WIDTH-1 : 0] 	    s_axi_wdata,
+	input wire [(C_S_AXI_DATA_WIDTH/8)-1 : 0]   s_axi_wstrb,
+	input wire  							    s_axi_wvalid,
+	output logic  							    s_axi_wready,
+	output logic [1 : 0] 					    s_axi_bresp,
+	output logic  							    s_axi_bvalid,
+	input wire  							    s_axi_bready,
+	input wire [C_S_AXI_ADDR_WIDTH-1 : 0] 	    s_axi_araddr,
+	input wire [2 : 0] 						    s_axi_arprot,
+	input wire  							    s_axi_arvalid,
+	output logic  							    s_axi_arready,
+	output logic [C_S_AXI_DATA_WIDTH-1 : 0]     s_axi_rdata,
+	output logic [1 : 0] 					    s_axi_rresp,
+	output logic 							    s_axi_rvalid,
+	input wire  							    s_axi_rready
 );
     // -------------------------------------------------------------------------
     // Register Map
     // -------------------------------------------------------------------------
-    logic [31:0] csr_udp_engine;
+    logic [31:0] csr_udp_engine_100g__ctrl;                         // 0x0
 
-    logic [31:0] csr_udp_engine_macAddr_upper;
-    logic [31:0] csr_udp_engine_macAddr_lower;
-    logic [31:0] csr_udp_engine_ipAddr;
-    logic [31:0] csr_udp_engine_port;
+    logic [31:0] csr_udp_engine_100g__myConfig_macAddr_upper;       // 0x0
+    logic [31:0] csr_udp_engine_100g__myConfig_macAddr_lower;       // 0x0
+    logic [31:0] csr_udp_engine_100g__myConfig_ipAddr;              // 0x0
+    logic [31:0] csr_udp_engine_100g__myConfig_udpPort;             // 0x0
 
-    logic [31:0] csr_wr_ctrl_macAddr_upper;
-    logic [31:0] csr_wr_ctrl_macAddr_lower;
-    logic [31:0] csr_wr_ctrl_ip_addr;
-    logic [31:0] csr_wr_ctrl_port;
-    logic [31:0] csr_wr_ctrl_bind;
-    logic [31:0] csr_wr_ctrl_trigger;
-    logic [31:0] csr_wr_ctrl_status;
-    logic [31:0] csr_wr_ctrl_connectedId;
+    logic [31:0] csr_udp_engine_100g__connManager_wr_macAddr_upper; // 0x0
+    logic [31:0] csr_udp_engine_100g__connManager_wr_macAddr_lower; // 0x0
+    logic [31:0] csr_udp_engine_100g__connManager_wr_ip_addr;       // 0x0
+    logic [31:0] csr_udp_engine_100g__connManager_wr_port;          // 0x0
+    logic [31:0] csr_udp_engine_100g__connManager_wr_bind;          // 0x0
+    logic [31:0] csr_udp_engine_100g__connManager_wr_trigger;       // 0x0
+    logic [31:0] csr_udp_engine_100g__connManager_wr_status;        // 0x0
+    logic [31:0] csr_udp_engine_100g__connManager_wr_connectedId;   // 0x0
 
     // -------------------------------------------------------------------------
-    // Register Map FSM (TODO)
+    // Register Map FSM 
     // -------------------------------------------------------------------------
-    // add an fsm module to let the user control the registers through axi-lite
  
+    udp_engine_control_slave_lite_v1_0_S00_AXI #(
+        .C_S_AXI_DATA_WIDTH(C_S_AXI_DATA_WIDTH),
+		.C_S_AXI_ADDR_WIDTH(C_S_AXI_ADDR_WIDTH)
+    )
+    udp_engine_control_fsm_unit (
+        .csr_udp_engine_100g__ctrl(csr_udp_engine_100g__ctrl),
+		.csr_udp_engine_100g__myConfig_macAddr_upper(csr_udp_engine_100g__myConfig_macAddr_upper),
+		.csr_udp_engine_100g__myConfig_macAddr_lower(csr_udp_engine_100g__myConfig_macAddr_lower),
+		.csr_udp_engine_100g__myConfig_ipAddr(csr_udp_engine_100g__myConfig_ipAddr),
+		.csr_udp_engine_100g__myConfig_udpPort(csr_udp_engine_100g__myConfig_udpPort),
+		.csr_udp_engine_100g__connManager_wr_macAddr_upper(csr_udp_engine_100g__connManager_wr_macAddr_upper),
+		.csr_udp_engine_100g__connManager_wr_macAddr_lower(csr_udp_engine_100g__connManager_wr_macAddr_lower),
+		.csr_udp_engine_100g__connManager_wr_ip_addr(csr_udp_engine_100g__connManager_wr_ip_addr),
+		.csr_udp_engine_100g__connManager_wr_port(csr_udp_engine_100g__connManager_wr_port),
+		.csr_udp_engine_100g__connManager_wr_bind(csr_udp_engine_100g__connManager_wr_bind),
+		.csr_udp_engine_100g__connManager_wr_trigger(csr_udp_engine_100g__connManager_wr_trigger),
+		.csr_udp_engine_100g__connManager_wr_status(csr_udp_engine_100g__connManager_wr_status),
+		.csr_udp_engine_100g__connManager_wr_connectedId(csr_udp_engine_100g__connManager_wr_connectedId),
 
-
+		.S_AXI_ACLK(s_axi_aclk),
+		.S_AXI_ARESETN(s_axi_aresetn),
+		.S_AXI_AWADDR(s_axi_awaddr),
+		.S_AXI_AWPROT(s_axi_awprot),
+		.S_AXI_AWVALID(s_axi_awvalid),
+		.S_AXI_AWREADY(s_axi_awready),
+		.S_AXI_WDATA(s_axi_wdata),
+		.S_AXI_WSTRB(s_axi_wstrb),
+		.S_AXI_WVALID(s_axi_wvalid),
+		.S_AXI_WREADY(s_axi_wready),
+		.S_AXI_BRESP(s_axi_bresp),
+		.S_AXI_BVALID(s_axi_bvalid),
+		.S_AXI_BREADY(s_axi_bready),
+		.S_AXI_ARADDR(s_axi_araddr),
+		.S_AXI_ARPROT(s_axi_arprot),
+		.S_AXI_ARVALID(s_axi_arvalid),
+		.S_AXI_ARREADY(s_axi_arready),
+		.S_AXI_RDATA(s_axi_rdata),
+		.S_AXI_RRESP(s_axi_rresp),
+		.S_AXI_RVALID(s_axi_rvalid),
+		.S_AXI_RREADY(s_axi_rready)
+    );
 
     // -------------------------------------------------------------------------
-    // Registers -> My IP
+    // Registers -> IP Control
     // -------------------------------------------------------------------------
-    logic [31:0]     my_config_ipAddr;
-    logic [47:0]     my_config_macAddr;
-    logic [15:0]     my_config_udpPort;
 
-    always_comb begin
-        my_config_ipAddr    = udp_engine_ipAddr;
-        my_config_macAddr   = {udp_engine_macAddr_upper[15:0], udp_engine_macAddr_lower};
-        my_config_udpPort   = udp_engine_port[15:0];
+    // IP control registers
+    logic tx_engine_enable;
+    logic rx_engine_enable;
+    logic rx_engine_bypass;
+    assign tx_engine_enable = csr_udp_engine_100g__ctrl[0];
+    assign rx_engine_enable = csr_udp_engine_100g__ctrl[1];
+    assign rx_engine_bypass = csr_udp_engine_100g__ctrl[2];
+
+    // -------------------------------------------------------------------------
+    // Registers -> My Internet Configurations
+    // -------------------------------------------------------------------------
+
+    // Assume only done while the engine is idle so we have simple cdc
+    logic [31:0]     tx_config_ipAddr;
+    logic [47:0]     tx_config_macAddr;
+    logic [15:0]     tx_config_udpPort;
+
+    logic [31:0]     rx_config_ipAddr;
+    logic [47:0]     rx_config_macAddr;
+    logic [15:0]     rx_config_udpPort;
+
+    xpm_cdc_array_single #(
+        .DEST_SYNC_FF(4),
+        .INIT_SYNC_FF(0),
+        .SIM_ASSERT_CHK(0),
+        .SRC_INPUT_REG(0),
+        .WIDTH(32 + 48 + 16)
+    ) xpm_cdc_array_single_inst_TX (
+        .dest_out({ tx_config_ipAddr, 
+                    tx_config_macAddr,
+                    tx_config_udpPort}),
+        .dest_clk(tx_axis_aclk),
+        .src_clk(),
+        .src_in(
+            {csr_udp_engine_100g__myConfig_ipAddr,
+            {csr_udp_engine_100g__myConfig_macAddr_upper[15:0], csr_udp_engine_100g__connManager_wr_macAddr_lower},
+            csr_udp_engine_100g__myConfig_udpPort[15:0]})
+    );
+
+    xpm_cdc_array_single #(
+        .DEST_SYNC_FF(4),
+        .INIT_SYNC_FF(0),
+        .SIM_ASSERT_CHK(0),
+        .SRC_INPUT_REG(0),
+        .WIDTH(32 + 48 + 16)
+    ) xpm_cdc_array_single_inst_RX (
+        .dest_out({ rx_config_ipAddr, 
+                    rx_config_macAddr,
+                    rx_config_udpPort}),
+        .dest_clk(rx_axis_aclk),
+        .src_clk(),
+        .src_in(
+            {csr_udp_engine_100g__myConfig_ipAddr,
+            {csr_udp_engine_100g__myConfig_macAddr_upper[15:0], csr_udp_engine_100g__connManager_wr_macAddr_lower},
+            csr_udp_engine_100g__myConfig_udpPort[15:0]})
+    );
+
+    // -------------------------------------------------------------------------
+    // Registers -> Connection Manager Write Channel
+    // -------------------------------------------------------------------------
+
+    logic                       s02_axis_ctrl_valid;
+    logic [MAC_ADDR_WIDTH-1:0]  s02_axis_ctrl_macAddr;
+    logic [IP_ADDR_WIDTH-1:0]   s02_axis_ctrl_ipAddr;
+    logic [UDP_PORT_WIDTH-1:0]  s02_axis_ctrl_udpPort;
+    logic                       s02_axis_ctrl_bind;
+    logic                       s02_axis_ctrl_ready;
+
+    logic                       m02_axis_ctrl_ready;
+    logic                       m02_axis_ctrl_valid;
+    logic                       m02_axis_ctrl_ack;
+    logic [CONN_ID_WIDTH-1:0]   m02_axis_ctrl_connectionId;
+    logic                       m02_axis_ctrl_full;
+
+    assign m02_axis_ctrl_ready = 1'b1;
+    always_ff @(posedge s_axi_aclk) begin
+        if (!s_axi_aresetn) begin
+                s02_axis_ctrl_valid     <= 1'b0;
+                s02_axis_ctrl_macAddr   <=  'b0;
+                s02_axis_ctrl_ipAddr    <=  'b0;
+                s02_axis_ctrl_udpPort   <=  'b0;
+                s02_axis_ctrl_bind      <=  'b0;
+        end else begin
+            if (s02_axis_ctrl_ready & csr_udp_engine_100g__connManager_wr_trigger) begin
+                s02_axis_ctrl_valid     <= 1'b1;
+                s02_axis_ctrl_macAddr   <= {csr_udp_engine_100g__connManager_wr_macAddr_upper, csr_udp_engine_100g__connManager_wr_macAddr_lower};
+                s02_axis_ctrl_ipAddr    <=  csr_udp_engine_100g__connManager_wr_ip_addr;
+                s02_axis_ctrl_udpPort   <=  csr_udp_engine_100g__connManager_wr_port;
+                s02_axis_ctrl_bind      <=  csr_udp_engine_100g__connManager_wr_bind;
+            end else begin
+                s02_axis_ctrl_valid     <= 1'b0;
+                s02_axis_ctrl_macAddr   <=  'b0;
+                s02_axis_ctrl_ipAddr    <=  'b0;
+                s02_axis_ctrl_udpPort   <=  'b0;
+                s02_axis_ctrl_bind      <=  'b0;
+            end
+        end
+
+        if (!s_axi_aresetn) begin
+            csr_udp_engine_100g__connManager_wr_status              <= 'b0;
+            csr_udp_engine_100g__connManager_wr_connectedId         <= 'b0;
+        end else begin
+            if (m02_axis_ctrl_valid & m02_axis_ctrl_ready) begin
+                csr_udp_engine_100g__connManager_wr_connectedId     <= {'b0, m02_axis_ctrl_connectionId};
+                csr_udp_engine_100g__connManager_wr_status[0]       <= m02_axis_ctrl_ack;
+                csr_udp_engine_100g__connManager_wr_status[1]       <= m02_axis_ctrl_full;
+                csr_udp_engine_100g__connManager_wr_status[31:2]    <= 'b0;
+            end else begin
+                csr_udp_engine_100g__connManager_wr_status          <= 'b0;
+                csr_udp_engine_100g__connManager_wr_connectedId     <= 'b0;
+            end
+        end
     end
 
 
@@ -235,9 +381,11 @@ module udp_engine_100g #(
     ) ethernet_tx_unit (
         .tx_axis_aclk(tx_axis_aclk),
         .tx_axis_aresetn(tx_axis_aresetn),
-        .my_config_ipAddr(my_config_ipAddr),
-        .my_config_macAddr(my_config_macAddr),
-        .my_config_udpPort(my_config_udpPort),
+        .tx_engine_enable(tx_engine_enable),
+
+        .my_config_ipAddr(tx_config_ipAddr),
+        .my_config_macAddr(tx_config_macAddr),
+        .my_config_udpPort(tx_config_udpPort),
 
         .cmac_tx_axis_tready(cmac_tx_axis_tready),
         .cmac_tx_axis_tdata(cmac_tx_axis_tdata),
@@ -245,7 +393,6 @@ module udp_engine_100g #(
         .cmac_tx_axis_tvalid(cmac_tx_axis_tvalid),
         .cmac_tx_axis_tlast(cmac_tx_axis_tlast),
 
-        .udp_tx_axis_connection_id(udp_tx_axis_connection_id),
         .udp_tx_axis_tready(udp_tx_axis_tready),
         .udp_tx_axis_tdata(udp_tx_axis_tdata),
         .udp_tx_axis_tkeep(udp_tx_axis_tkeep),
@@ -266,7 +413,6 @@ module udp_engine_100g #(
     // -------------------------------------------------------------------------
     // UDP RX Engine (TODO)
     // -------------------------------------------------------------------------
-
 
 
 endmodule
