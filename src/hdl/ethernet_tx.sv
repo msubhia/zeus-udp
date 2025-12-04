@@ -142,7 +142,7 @@ module ethernet_tx #(
     );
 
     fifo_axis_wrapper #(
-        .FIFO_DEPTH(64),
+        .FIFO_DEPTH(128),
         .TDATA_WIDTH(CONNECTION_META_WIDTH)
     ) connection_metadata_fifo (
         .m_aclk(tx_axis_aclk),
@@ -162,7 +162,7 @@ module ethernet_tx #(
     );
 
     fifo_axis_wrapper #(
-        .FIFO_DEPTH(64),
+        .FIFO_DEPTH(128),
         .TDATA_WIDTH(IP_PACKET_LENGTH_WIDTH)
     ) length_metadata_fifo (
         .m_aclk(tx_axis_aclk),
@@ -188,7 +188,7 @@ module ethernet_tx #(
 
     // Note: the packet fifo is the one that supposed to fill first
     // so no case where we drop a length or connection metadata because the backpressure is not handles
-    assign udp_tx_axis_tready = ready_packet_fifo & ready_connection_metadata_fifo & ready_length_metadata_fifo;
+    assign udp_tx_axis_tready = ready_packet_fifo;
 
     always_ff @(posedge tx_axis_aclk) begin
         
@@ -208,6 +208,8 @@ module ethernet_tx #(
                     current_total_length_post       <= 'b0;
                     current_total_length_post_valid <= 1'b0;
                 end
+            end else begin
+                current_total_length_post_valid <= 1'b0;
             end
 
         end

@@ -338,13 +338,15 @@ def generate_random_packet(existing_connection_ids):
     mode = random.randint(0, 2)
 
     if mode == 0:
-        base_len = random.randrange(0, 176, 8)
+        base_len = random.randrange(8, 176, 8)
     elif mode == 1:
         base_len = 176
     else:
-        base_len = random.randrange(177, 513, 8)
+        base_len = random.randrange(184, 513, 8)
 
-    payload_length_bytes = base_len + n * 512
+    payload_length_bits = base_len + n * 512
+    assert(payload_length_bits % 8 == 0)
+    payload_length_bytes = payload_length_bits // 8
 
     # ------------------------------------------------------------
     # 2. Payload bytes (list of ints)
@@ -428,31 +430,30 @@ def build_ipv4_header(payload_length_bytes,
                       IP_HEADER_BYTES=20,
                       UDP_HEADER_BYTES=8):
 
-    # Version (4) + IHL (5 → 20 bytes)
+
     version_ihl = (4 << 4) | (IP_HEADER_BYTES // 4)
+    dscp_ecn    = (dscp << 2) | ecn
 
-    # DSCP (6 bits) + ECN (2 bits)
-    dscp_ecn = (dscp << 2) | ecn
-
-    # Total length = IP header + UDP header + payload
-    total_len = payload_length_bytes + IP_HEADER_BYTES + UDP_HEADER_BYTES
+    # Total length = header + UDP + payload
+    total_len   = payload_length_bytes + IP_HEADER_BYTES + UDP_HEADER_BYTES
 
     # Flags (3 bits) + Fragment offset (13 bits)
     flags_frag = ((flags & 0x7) << 13) | (frag_offset & 0x1FFF)
 
-    header = 0
-    header = header | version_ihl
-    header = (header | dscp_ecn)            << 8
-    header = (header | swap_bytes(total_len, 2))        << 16
-    header = (header | swap_bytes(identification, 2))   << 16
-    header = (header | swap_bytes(flags_frag, 2))       << 16
-    header = (header | ttl)                 << 8
-    header = (header | protocol)            << 8
-    header = (header | 0)                   << 16      # checksum = 0
-    header = (header | swap_bytes(src_ip, 4))          << 32
-    header = (header | swap_bytes(dst_ip, 4))          << 32
+    # Build header exactly in the same field order as the Verilog
+    ip_header = 0
+    ip_header |= version_ihl
+    ip_header |= (dscp_ecn << 8)
+    ip_header |= (swap_bytes(total_len, 2) << 16)
+    ip_header |= (swap_bytes(identification, 2) << 32)
+    ip_header |= (swap_bytes(flags_frag, 2) << 48)
+    ip_header |= (ttl << 64)
+    ip_header |= (protocol << 72)
+    ip_header |= (0 << 80)
+    ip_header |= (swap_bytes(src_ip, 4) << 96)
+    ip_header |= (swap_bytes(dst_ip, 4) << 128)
 
-    return header
+    return ip_header
 
 
 def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_MAC, MY_CONFIG_IP, MY_CONFIG_PORT):
@@ -462,6 +463,7 @@ def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_MAC,
 
     # If not valid — drop packet
     if my_hash_table_vlds[hash_way][hash_key] == 0:
+        print("packet dropped by sw")
         return
 
     dst_ipAddr  = my_hash_table_ipAddr[hash_way][hash_key]
@@ -579,7 +581,7 @@ async def reset(clk,rst, cycles_held = 3,polarity=1):
     rst.value = not polarity
 
 
-async def test_structure(dut, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8):
+async def test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8):
  
     wr_in_monitor       = AXIS_Monitor(dut,'s02',dut.s00_axis_aclk,callback = connection_manager_model_wr)
     wr_out_monitor      = AXIS_Monitor(dut,'m02',dut.s00_axis_aclk,callback = lambda x: appending_values_wr(x))
@@ -646,10 +648,9 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN
     # ------------------------------- UDP Packets  ---------------------------------
     #
 
-    NUM_TEST_PACKETS = 100
-
     for _ in range(NUM_TEST_PACKETS):
         beats, connection_id, payload_length_bytes, payload = generate_random_packet(existing_connection_ids)
+        print(f"packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}")
         model_udp(connection_id, payload_length_bytes, payload, MY_CONFIG_MAC, MY_CONFIG_IP, MY_CONFIG_PORT)
 
         udp_in_driver.append({'type':'write_burst', "contents": {"data": [tdata for (tdata, tkeep, tlast) in beats],
@@ -660,8 +661,8 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN
         udp_in_driver.append({"type":"pause", "duration": random.randint(0,10)})
 
     udp_in_driver.append({"type":"pause", "duration": 5})
-    udp_out_driver.append({'type':'read', "duration": NUM_TEST_PACKETS * 1000 + 10000})
-    await ClockCycles(dut.s00_axis_aclk, NUM_TEST_PACKETS * 1000 + 10000)
+    udp_out_driver.append({'type':'read', "duration": NUM_TEST_PACKETS * 100})
+    await ClockCycles(dut.s00_axis_aclk, NUM_TEST_PACKETS * 100)
 
     #
     # ------------------------------- Validation  ---------------------------------
@@ -684,7 +685,7 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN
 
 @cocotb.test()
 async def test_1(dut):
-    await test_structure(dut, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8)
+    await test_structure(dut, NUM_TEST_PACKETS = 1000, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8)
 
 
 
