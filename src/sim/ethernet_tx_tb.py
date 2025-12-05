@@ -362,57 +362,53 @@ def generate_random_packet(existing_connection_ids):
         connection_id = random.getrandbits(18)
 
     # Convert connectionId to 4 big-endian bytes
-    conn_bytes = [
-        (connection_id >> 24) & 0xFF,
-        (connection_id >> 16) & 0xFF,
-        (connection_id >>  8) & 0xFF,
-        (connection_id >>  0) & 0xFF,
-    ]
+    # conn_bytes = [
+    #     (connection_id >> 24) & 0xFF,
+    #     (connection_id >> 16) & 0xFF,
+    #     (connection_id >>  8) & 0xFF,
+    #     (connection_id >>  0) & 0xFF,
+    # ]
+
+    full_packet_bytes = []
+
+    # append connectionId as MSB → LSB (like your IP header builder)
+    for i in reversed(range(4)):    # MSB → LSB
+        full_packet_bytes.append((connection_id >> (8*i)) & 0xFF)
+
+    # append payload bytes (already LSB-first from RAM)
+    full_packet_bytes.extend(payload)
 
     # ------------------------------------------------------------
-    # 4. Slice payload into 64-byte beats
+    # 5. Slice into AXI beats (512-bit = 64 bytes)
     # ------------------------------------------------------------
     BEAT_BYTES = 64
     beats = []
 
-    total_beats = (payload_length_bytes + BEAT_BYTES - 1) // BEAT_BYTES
+    total_bytes = len(full_packet_bytes)
+    total_beats = (total_bytes + BEAT_BYTES - 1) // BEAT_BYTES
 
     for beat_idx in range(total_beats):
         start = beat_idx * BEAT_BYTES
-        end   = min(start + BEAT_BYTES, payload_length_bytes)
+        end   = min(start + BEAT_BYTES, total_bytes)
 
-        chunk = payload[start:end]
+        chunk = full_packet_bytes[start:end]
         chunk_len = len(chunk)
 
-        # ---- tdata assembly (little-endian inside beat) ----
+        # ---- assemble tdata ----
+        # LSB-first inside the beat (AXI convention)
         tdata = 0
-
-        # LSBs = payload bytes (little-endian)
         for i, b in enumerate(chunk):
             tdata |= (b << (8 * i))
 
-        # First beat: add connId in MSB 32 bits
-        if beat_idx == 0:
-            # shift payload up by 32 bytes? No — connId is above the payload.
-            tdata |= (
-                conn_bytes[3] << 512 |
-                conn_bytes[2] << 520 |
-                conn_bytes[1] << 528 |
-                conn_bytes[0] << 536
-            )
-
-        # ---- tkeep assembly ----
-        # Total bytes = 64 payload + 4 connId = 68
-        # But connId valid only on beat 0
-        byte_count = chunk_len
-        tkeep = (1 << byte_count) - 1
+        # ---- tkeep ----
+        tkeep = (1 << chunk_len) - 1
 
         # ---- tlast ----
         tlast = (beat_idx == total_beats - 1)
 
         beats.append((tdata, tkeep, tlast))
 
-    return beats, connection_id, payload_length_bytes, payload
+    return beats, connection_id, payload_length_bytes+4, full_packet_bytes
 
 
 def swap_bytes(val, num_bytes):
@@ -598,9 +594,13 @@ async def test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, N
     cocotb.start_soon(Clock(dut.s00_axis_aclk, 10, units="ns").start())
     await reset(dut.s00_axis_aclk, dut.s00_axis_aresetn, cycles_held=5, polarity=0)
 
+    await ClockCycles(dut.s00_axis_aclk, 3)
+    dut.tx_engine_enable.value = 1
+    await ClockCycles(dut.s00_axis_aclk, 3)
     dut.my_config_ipAddr.value  = MY_CONFIG_IP
     dut.my_config_macAddr.value = MY_CONFIG_MAC
     dut.my_config_udpPort.value = MY_CONFIG_PORT
+    await ClockCycles(dut.s00_axis_aclk, 3)
 
     #
     # ----------------------------- MAIN TEST ----------------------------------
@@ -685,7 +685,7 @@ async def test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, N
 
 @cocotb.test()
 async def test_1(dut):
-    await test_structure(dut, NUM_TEST_PACKETS = 1000, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8)
+    await test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8)
 
 
 

@@ -29,12 +29,13 @@ module ethernet_tx_wrapper #(
     input wire [15:0]   my_config_udpPort,
 
     // Ports of Axi Slave Bus Interface S00_AXIS
+    input wire          tx_engine_enable,
     input wire          s00_axis_aclk, 
     input wire          s00_axis_aresetn,
     input wire          s00_axis_tvalid,
     input wire          s00_axis_tlast, 
-    input wire [543:0]  s00_axis_tdata,
-    input wire [67:0]   s00_axis_tstrb,
+    input wire [511:0]  s00_axis_tdata,
+    input wire [63:0]   s00_axis_tstrb,
     output wire         s00_axis_tready,
 
     input wire          m00_axis_aclk, 
@@ -137,6 +138,7 @@ module ethernet_tx_wrapper #(
     ) ethernet_tx_unit (
         .tx_axis_aclk(s00_axis_aclk),
         .tx_axis_aresetn(s00_axis_aresetn),
+        .tx_engine_enable(tx_engine_enable),
 
         .my_config_ipAddr(my_config_ipAddr),
         .my_config_macAddr(my_config_macAddr),
@@ -148,10 +150,9 @@ module ethernet_tx_wrapper #(
         .cmac_tx_axis_tvalid(m00_axis_tvalid),
         .cmac_tx_axis_tlast(m00_axis_tlast),
 
-        .udp_tx_axis_connection_id(s00_axis_tdata[529:512]),
         .udp_tx_axis_tready(s00_axis_tready),
-        .udp_tx_axis_tdata(s00_axis_tdata[511:0]),
-        .udp_tx_axis_tkeep(s00_axis_tstrb[63:0]),
+        .udp_tx_axis_tdata(s00_axis_tdata),
+        .udp_tx_axis_tkeep(s00_axis_tstrb),
         .udp_tx_axis_tvalid(s00_axis_tvalid),
         .udp_tx_axis_tlast(s00_axis_tlast),
 

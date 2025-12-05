@@ -560,13 +560,13 @@ def connection_manager_tb_runner():
     #sim                 = os.getenv("SIM", "icarus")
     sim                 = os.getenv("SIM", "vivado")
     test_file           = os.path.basename(__file__).replace(".py","")
-    proj_path           = Path(__file__).resolve().parent
+    proj_path           = Path(__file__).resolve().parent.parent
 
     sys.path.append(str(proj_path / "model"))
 
-    sources             = [proj_path /  "connection_manager.sv",
-                           proj_path /  "connection_manager_wrapper.v",
-                           proj_path /  "bram_wrapper.sv"]
+    sources             = [proj_path /"hdl"/  "connection_manager.sv",
+                           proj_path /"hdl"/  "connection_manager_wrapper.v",
+                           proj_path /"hdl"/  "bram_wrapper.sv"]
 
     build_test_args     = []
     parameters          = {}

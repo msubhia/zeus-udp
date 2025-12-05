@@ -663,6 +663,16 @@
 		reg____csr_udp_engine_100g__connManager_wr_bind				= slv_reg9;
 	end
 
+	assign csr_udp_engine_100g__ctrl 							= reg____csr_udp_engine_100g__ctrl;
+	assign csr_udp_engine_100g__myConfig_macAddr_upper 			= reg____csr_udp_engine_100g__myConfig_macAddr_upper;
+	assign csr_udp_engine_100g__myConfig_macAddr_lower 			= reg____csr_udp_engine_100g__myConfig_macAddr_lower;
+	assign csr_udp_engine_100g__myConfig_ipAddr 				= reg____csr_udp_engine_100g__myConfig_ipAddr;
+	assign csr_udp_engine_100g__myConfig_udpPort 				= reg____csr_udp_engine_100g__myConfig_udpPort;
+	assign csr_udp_engine_100g__connManager_wr_macAddr_upper	= reg____csr_udp_engine_100g__connManager_wr_macAddr_upper;
+	assign csr_udp_engine_100g__connManager_wr_macAddr_lower	= reg____csr_udp_engine_100g__connManager_wr_macAddr_lower;
+	assign csr_udp_engine_100g__connManager_wr_ip_addr 			= reg____csr_udp_engine_100g__connManager_wr_ip_addr;
+	assign csr_udp_engine_100g__connManager_wr_port 			= reg____csr_udp_engine_100g__connManager_wr_port;
+	assign csr_udp_engine_100g__connManager_wr_bind 			= reg____csr_udp_engine_100g__connManager_wr_bind;
 	// User logic ends
 
 	endmodule
