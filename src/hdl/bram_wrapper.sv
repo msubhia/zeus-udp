@@ -4,7 +4,6 @@
 module dual_port_bram #(
     parameter int DATA_WIDTH,
     parameter int DATA_DEPTH,
-    parameter int BRAM_LATENCY,
     parameter MEMORY_PRIMITIVE = "auto", 
     parameter int ADDR_WIDTH = $clog2(DATA_DEPTH)
 ) (
@@ -51,8 +50,8 @@ module dual_port_bram #(
         .RAM_DECOMP("auto"),            
         .READ_DATA_WIDTH_A(DATA_WIDTH),         
         .READ_DATA_WIDTH_B(DATA_WIDTH),         
-        .READ_LATENCY_A(BRAM_LATENCY),             
-        .READ_LATENCY_B(BRAM_LATENCY),             
+        .READ_LATENCY_A(5),             
+        .READ_LATENCY_B(5),             
         .READ_RESET_VALUE_A("0"),       
         .READ_RESET_VALUE_B("0"),       
         .RST_MODE_A("SYNC"),            
@@ -64,8 +63,8 @@ module dual_port_bram #(
         .WAKEUP_TIME("disable_sleep"),  
         .WRITE_DATA_WIDTH_A(DATA_WIDTH),        
         .WRITE_DATA_WIDTH_B(DATA_WIDTH),        
-        .WRITE_MODE_A("read_first"),     
-        .WRITE_MODE_B("read_first"),     
+        .WRITE_MODE_A("write_first"),     
+        .WRITE_MODE_B("write_first"),     
         .WRITE_PROTECT(1)               
     )
     xpm_memory_tdpram_inst (

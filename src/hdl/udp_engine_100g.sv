@@ -28,7 +28,6 @@ module udp_engine_100g #(
     parameter int WAYS                          = 4,
     parameter int HASH_WIDTH                    = 16,
     parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
-    parameter int CONNECTION_MANAGER_LATENCY    = 3,
 
     parameter integer C_S_AXI_DATA_WIDTH	    = 32,
 	parameter integer C_S_AXI_ADDR_WIDTH	    = 7,
@@ -51,11 +50,11 @@ module udp_engine_100g #(
     // ----------------------------------------------------------------
 
     // RX Channel
-    input  wire [DATA_WIDTH-1:0]                cmac_rx_axis_tdata,
-    input  wire [KEEP_WIDTH-1:0]                cmac_rx_axis_tkeep,
-    input  wire                                 cmac_rx_axis_tvalid,
-    input  wire                                 cmac_rx_axis_tlast,
-    output logic                                cmac_rx_axis_tready,
+//    input  wire [DATA_WIDTH-1:0]                cmac_rx_axis_tdata,
+//    input  wire [KEEP_WIDTH-1:0]                cmac_rx_axis_tkeep,
+//    input  wire                                 cmac_rx_axis_tvalid,
+//    input  wire                                 cmac_rx_axis_tlast,
+//    output logic                                cmac_rx_axis_tready,
 
     // TX Channel
     output logic [DATA_WIDTH-1:0]               cmac_tx_axis_tdata,
@@ -69,7 +68,7 @@ module udp_engine_100g #(
     // ----------------------------------------------------------------
 
     // TX Channel
-    input wire  [CONN_ID_WIDTH-1:0]             udp_tx_axis_connection_id,
+//    input wire  [CONN_ID_WIDTH-1:0]             udp_tx_axis_connection_id,
     input  wire [DATA_WIDTH-1:0]                udp_tx_axis_tdata,
     input  wire [KEEP_WIDTH-1:0]                udp_tx_axis_tkeep,
     input  wire                                 udp_tx_axis_tvalid,
@@ -77,12 +76,12 @@ module udp_engine_100g #(
     output logic                                udp_tx_axis_tready,
 
     // RX Channel
-    output logic [CONN_ID_WIDTH-1:0]            udp_rx_axis_connection_id,
-    output logic [DATA_WIDTH-1:0]               udp_rx_axis_tdata,
-    output logic [KEEP_WIDTH-1:0]               udp_rx_axis_tkeep,
-    output logic                                udp_rx_axis_tvalid,
-    output logic                                udp_rx_axis_tlast,
-    input  wire                                 udp_rx_axis_tready,
+//    output logic [CONN_ID_WIDTH-1:0]            udp_rx_axis_connection_id,
+//    output logic [DATA_WIDTH-1:0]               udp_rx_axis_tdata,
+//    output logic [KEEP_WIDTH-1:0]               udp_rx_axis_tkeep,
+//    output logic                                udp_rx_axis_tvalid,
+//    output logic                                udp_rx_axis_tlast,
+//    input  wire                                 udp_rx_axis_tready,
 
     // ----------------------------------------------------------------
     // CONTROL INTERFACE (AXI-LITE)
@@ -302,9 +301,9 @@ module udp_engine_100g #(
     logic                       m01_axis_rv_lookup_ready;
     logic                       m01_axis_rv_lookup_valid;
     logic                       m01_axis_rv_lookup_hit;
-    logic [MAC_ADDR_WIDTH:0]    m01_axis_rv_lookup_macAddr;
-    logic [IP_ADDR_WIDTH:0]     m01_axis_rv_lookup_ipAddr;
-    logic [UDP_PORT_WIDTH:0]    m01_axis_rv_lookup_udpPort;
+    logic [MAC_ADDR_WIDTH-1:0]    m01_axis_rv_lookup_macAddr;
+    logic [IP_ADDR_WIDTH-1:0]     m01_axis_rv_lookup_ipAddr;
+    logic [UDP_PORT_WIDTH-1:0]    m01_axis_rv_lookup_udpPort;
 
     logic                       s00_axis_fw_lookup_aclk;
     logic                       s00_axis_fw_lookup_aresetn;
@@ -318,8 +317,7 @@ module udp_engine_100g #(
     logic [CONN_ID_WIDTH-1:0]   m00_axis_fw_lookup_connectionId;
 
     connection_manager #(
-        .WAYS(WAYS),
-        .BRAM_LATENCY(CONNECTION_MANAGER_LATENCY)
+        .WAYS(WAYS)
     ) connection_manager_unit (
         // Forward Lookup Channel
         .s00_axis_fw_lookup_aclk(rx_axis_aclk),
@@ -348,8 +346,8 @@ module udp_engine_100g #(
         .m01_axis_rv_lookup_udpPort(m01_axis_rv_lookup_udpPort),
 
         // Control (Writes) Channel
-        .s02_axis_ctrl_aclk(tx_axis_aclk),
-        .s02_axis_ctrl_aresetn(tx_axis_aresetn),
+        .s02_axis_ctrl_aclk(s_axi_aclk),
+        .s02_axis_ctrl_aresetn(s_axi_aresetn),
         .s02_axis_ctrl_valid(s02_axis_ctrl_valid),
         .s02_axis_ctrl_macAddr(s02_axis_ctrl_macAddr),
         .s02_axis_ctrl_ipAddr(s02_axis_ctrl_ipAddr),
@@ -400,14 +398,14 @@ module udp_engine_100g #(
         .udp_tx_axis_tlast(udp_tx_axis_tlast),
 
         .m01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
-        .m01_axis_rv_lookup_connectionId(m01_axis_rv_lookup_connectionId),
+        .m01_axis_rv_lookup_connectionId(s01_axis_rv_lookup_connectionId),
         .m01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
         .s01_axis_rv_lookup_ready(s01_axis_rv_lookup_ready),
         .s01_axis_rv_lookup_valid(s01_axis_rv_lookup_valid),
-        .s01_axis_rv_lookup_hit(s01_axis_rv_lookup_hit),
-        .s01_axis_rv_lookup_macAddr(s01_axis_rv_lookup_macAddr),
-        .s01_axis_rv_lookup_ipAddr(s01_axis_rv_lookup_ipAddr),
-        .s01_axis_rv_lookup_udpPort(s01_axis_rv_lookup_udpPort)
+        .s01_axis_rv_lookup_hit(m01_axis_rv_lookup_hit),
+        .s01_axis_rv_lookup_macAddr(m01_axis_rv_lookup_macAddr),
+        .s01_axis_rv_lookup_ipAddr(m01_axis_rv_lookup_ipAddr),
+        .s01_axis_rv_lookup_udpPort(m01_axis_rv_lookup_udpPort)
     );
 
     // -------------------------------------------------------------------------

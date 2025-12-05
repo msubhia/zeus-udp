@@ -33,7 +33,7 @@ module fifo_axis_wrapper #(
         .ECC_MODE("no_ecc"),            // String
         .EN_SIM_ASSERT_ERR("warning"),  // String
         .FIFO_DEPTH(FIFO_DEPTH),        // DECIMAL
-        .FIFO_MEMORY_TYPE("auto"),      // String
+        .FIFO_MEMORY_TYPE("ultra"),      // String
         .PACKET_FIFO("false"),          // String
         .PROG_EMPTY_THRESH(10),         // DECIMAL
         .PROG_FULL_THRESH(10),          // DECIMAL

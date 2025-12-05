@@ -19,7 +19,6 @@ module ethernet_tx_wrapper #(
     parameter int WAYS                          = 4,
     parameter int HASH_WIDTH                    = 16,
     parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
-    parameter int CONNECTION_MANAGER_LATENCY    = 3,
 
     localparam int IP_ADDR_WIDTH                = 32,
     localparam int MAC_ADDR_WIDTH               = 48,
@@ -81,8 +80,7 @@ module ethernet_tx_wrapper #(
     assign m02_axis_tdata[31:CONN_ID_WIDTH+2]   = 'b0;
 
     connection_manager #(
-        .WAYS(WAYS),
-        .BRAM_LATENCY(CONNECTION_MANAGER_LATENCY)
+        .WAYS(WAYS)
     ) connection_manager_unit (
         // Forward Lookup Channel
         .s00_axis_fw_lookup_aclk(),

@@ -2,27 +2,26 @@
 `timescale 1ns/1ps
 
 module udp_engine_100g_wrapper #(
-    parameter int DATA_WIDTH                    = 512,
-    parameter int KEEP_WIDTH                    = DATA_WIDTH/8,
+    parameter DATA_WIDTH                    = 512,
+    parameter KEEP_WIDTH                    = DATA_WIDTH/8,
 
-    parameter int IP_UDP_DSCP                   = 0,
-    parameter int IP_UDP_ENC                    = 0,
-    parameter int IP_UDP_IDEN                   = 0,
-    parameter int IP_UDP_FLAGS                  = 0,
-    parameter int IP_UDP_FRAG_OFFSET            = 0,
-    parameter int IP_UDP_TTL                    = 64,
+    parameter IP_UDP_DSCP                   = 0,
+    parameter IP_UDP_ENC                    = 0,
+    parameter IP_UDP_IDEN                   = 0,
+    parameter IP_UDP_FLAGS                  = 0,
+    parameter IP_UDP_FRAG_OFFSET            = 0,
+    parameter IP_UDP_TTL                    = 64,
 
-    parameter int WAYS                          = 4,
-    parameter int HASH_WIDTH                    = 16,
-    parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
-    parameter int CONNECTION_MANAGER_LATENCY    = 3,
+    parameter WAYS                          = 4,
+    parameter HASH_WIDTH                    = 16,
+    parameter CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
 
     parameter integer C_S_AXI_DATA_WIDTH	    = 32,
     parameter integer C_S_AXI_ADDR_WIDTH	    = 7,
 
-    localparam int IP_ADDR_WIDTH                = 32,
-    localparam int MAC_ADDR_WIDTH               = 48,
-    localparam int UDP_PORT_WIDTH               = 16
+    localparam IP_ADDR_WIDTH                = 32,
+    localparam MAC_ADDR_WIDTH               = 48,
+    localparam UDP_PORT_WIDTH               = 16
 ) (
     // ----------------------------------------------------------------
     // CLOCKS AND RESETS
@@ -38,12 +37,12 @@ module udp_engine_100g_wrapper #(
     // CMAC INTERFACE (AXI-STREAM)
     // ----------------------------------------------------------------
 
-    // RX Channel
-    input  wire [DATA_WIDTH-1:0]                cmac_rx_axis_tdata,
-    input  wire [KEEP_WIDTH-1:0]                cmac_rx_axis_tkeep,
-    input  wire                                 cmac_rx_axis_tvalid,
-    input  wire                                 cmac_rx_axis_tlast,
-    output wire                                 cmac_rx_axis_tready,
+//    // RX Channel
+//    input  wire [DATA_WIDTH-1:0]                cmac_rx_axis_tdata,
+//    input  wire [KEEP_WIDTH-1:0]                cmac_rx_axis_tkeep,
+//    input  wire                                 cmac_rx_axis_tvalid,
+//    input  wire                                 cmac_rx_axis_tlast,
+//    output wire                                 cmac_rx_axis_tready,
 
     // TX Channel
     output wire [DATA_WIDTH-1:0]                cmac_tx_axis_tdata,
@@ -57,7 +56,7 @@ module udp_engine_100g_wrapper #(
     // ----------------------------------------------------------------
 
     // TX Channel
-    input  wire [CONN_ID_WIDTH-1:0]             udp_tx_axis_connection_id,
+//    input  wire [CONN_ID_WIDTH-1:0]             udp_tx_axis_connection_id,
     input  wire [DATA_WIDTH-1:0]                udp_tx_axis_tdata,
     input  wire [KEEP_WIDTH-1:0]                udp_tx_axis_tkeep,
     input  wire                                 udp_tx_axis_tvalid,
@@ -65,12 +64,12 @@ module udp_engine_100g_wrapper #(
     output wire                                 udp_tx_axis_tready,
 
     // RX Channel
-    output wire [CONN_ID_WIDTH-1:0]             udp_rx_axis_connection_id,
-    output wire [DATA_WIDTH-1:0]                udp_rx_axis_tdata,
-    output wire [KEEP_WIDTH-1:0]                udp_rx_axis_tkeep,
-    output wire                                 udp_rx_axis_tvalid,
-    output wire                                 udp_rx_axis_tlast,
-    input  wire                                 udp_rx_axis_tready,
+//    output wire [CONN_ID_WIDTH-1:0]             udp_rx_axis_connection_id,
+//    output wire [DATA_WIDTH-1:0]                udp_rx_axis_tdata,
+//    output wire [KEEP_WIDTH-1:0]                udp_rx_axis_tkeep,
+//    output wire                                 udp_rx_axis_tvalid,
+//    output wire                                 udp_rx_axis_tlast,
+//    input  wire                                 udp_rx_axis_tready,
 
     // ----------------------------------------------------------------
     // CONTROL INTERFACE (AXI-LITE)
@@ -117,7 +116,6 @@ module udp_engine_100g_wrapper #(
         .WAYS                       (WAYS),
         .HASH_WIDTH                 (HASH_WIDTH),
         .CONN_ID_WIDTH              (CONN_ID_WIDTH),
-        .CONNECTION_MANAGER_LATENCY (CONNECTION_MANAGER_LATENCY),
 
         .C_S_AXI_DATA_WIDTH         (C_S_AXI_DATA_WIDTH),
         .C_S_AXI_ADDR_WIDTH         (C_S_AXI_ADDR_WIDTH)
@@ -137,11 +135,11 @@ module udp_engine_100g_wrapper #(
         // ----------------------------------------------------------------
 
         // RX Channel
-        .cmac_rx_axis_tdata         (cmac_rx_axis_tdata),
-        .cmac_rx_axis_tkeep         (cmac_rx_axis_tkeep),
-        .cmac_rx_axis_tvalid        (cmac_rx_axis_tvalid),
-        .cmac_rx_axis_tlast         (cmac_rx_axis_tlast),
-        .cmac_rx_axis_tready        (cmac_rx_axis_tready),
+//        .cmac_rx_axis_tdata         (cmac_rx_axis_tdata),
+//        .cmac_rx_axis_tkeep         (cmac_rx_axis_tkeep),
+//        .cmac_rx_axis_tvalid        (cmac_rx_axis_tvalid),
+//        .cmac_rx_axis_tlast         (cmac_rx_axis_tlast),
+//        .cmac_rx_axis_tready        (cmac_rx_axis_tready),
 
         // TX Channel
         .cmac_tx_axis_tdata         (cmac_tx_axis_tdata),
@@ -155,7 +153,7 @@ module udp_engine_100g_wrapper #(
         // ----------------------------------------------------------------
 
         // TX Channel
-        .udp_tx_axis_connection_id  (udp_tx_axis_connection_id),
+//        .udp_tx_axis_connection_id  (udp_tx_axis_connection_id),
         .udp_tx_axis_tdata          (udp_tx_axis_tdata),
         .udp_tx_axis_tkeep          (udp_tx_axis_tkeep),
         .udp_tx_axis_tvalid         (udp_tx_axis_tvalid),
@@ -163,12 +161,12 @@ module udp_engine_100g_wrapper #(
         .udp_tx_axis_tready         (udp_tx_axis_tready),
 
         // RX Channel
-        .udp_rx_axis_connection_id  (udp_rx_axis_connection_id),
-        .udp_rx_axis_tdata          (udp_rx_axis_tdata),
-        .udp_rx_axis_tkeep          (udp_rx_axis_tkeep),
-        .udp_rx_axis_tvalid         (udp_rx_axis_tvalid),
-        .udp_rx_axis_tlast          (udp_rx_axis_tlast),
-        .udp_rx_axis_tready         (udp_rx_axis_tready),
+//        .udp_rx_axis_connection_id  (udp_rx_axis_connection_id),
+//        .udp_rx_axis_tdata          (udp_rx_axis_tdata),
+//        .udp_rx_axis_tkeep          (udp_rx_axis_tkeep),
+//        .udp_rx_axis_tvalid         (udp_rx_axis_tvalid),
+//        .udp_rx_axis_tlast          (udp_rx_axis_tlast),
+//        .udp_rx_axis_tready         (udp_rx_axis_tready),
 
         // ----------------------------------------------------------------
         // CONTROL INTERFACE (AXI-LITE)

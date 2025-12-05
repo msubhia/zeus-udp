@@ -235,9 +235,19 @@ module ethernet_tx #(
         end
     end
 
-    assign m01_axis_rv_lookup_valid         = udp_tx_axis_tvalid & udp_tx_axis_tready & is_first_transaction;
-    assign m01_axis_rv_lookup_connectionId  = swap_bytes_4(udp_tx_axis_tdata[31:0])[CONN_ID_WIDTH-1:0];
+    logic m01_axis_rv_lookup_valid_pipe;
+    logic [31:0] m01_axis_rv_lookup_connectionId_pipe;
+
     assign s01_axis_rv_lookup_ready         = 1'b1;
+
+    always_ff @(posedge tx_axis_aclk) begin // pipeline to meet timing
+        m01_axis_rv_lookup_valid_pipe <= udp_tx_axis_tvalid & udp_tx_axis_tready & is_first_transaction;
+        m01_axis_rv_lookup_connectionId_pipe <= swap_bytes_4(udp_tx_axis_tdata[31:0]);
+
+    end
+    assign m01_axis_rv_lookup_valid         = m01_axis_rv_lookup_valid_pipe;
+    assign m01_axis_rv_lookup_connectionId  = m01_axis_rv_lookup_connectionId_pipe[CONN_ID_WIDTH-1:0];
+    
 
 
     // ==============================================================================================
