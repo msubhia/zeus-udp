@@ -81,6 +81,7 @@
 module connection_manager #(
     // user-manager parameters
     parameter int WAYS              = 4,    // Associativity of hash table
+    parameter int BRAM_LATENCY      = 5,    // Latency of underlying BRAM
 
     // developer-managed parameters
     localparam int HASH_WIDTH       = 16,

@@ -14,11 +14,6 @@ function automatic logic [47:0] swap_bytes_6(input logic [47:0] din);
     end
 endfunction
 
-function automatic logic [31:0] swap_bytes_4(input logic [31:0] din);
-    for (int i = 0; i < 4; i++) begin
-        swap_bytes_4[i*8 +: 8] = din[(4-1-i)*8 +: 8];
-    end
-endfunction
 
 
 // ==================================================================================================

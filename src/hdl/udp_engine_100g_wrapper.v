@@ -15,6 +15,7 @@ module udp_engine_100g_wrapper #(
     parameter WAYS                          = 4,
     parameter HASH_WIDTH                    = 16,
     parameter CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
+    parameter CONNECTION_MANAGER_LATENCY    = 5,
 
     parameter integer C_S_AXI_DATA_WIDTH	    = 32,
     parameter integer C_S_AXI_ADDR_WIDTH	    = 7,
@@ -116,6 +117,7 @@ module udp_engine_100g_wrapper #(
         .WAYS                       (WAYS),
         .HASH_WIDTH                 (HASH_WIDTH),
         .CONN_ID_WIDTH              (CONN_ID_WIDTH),
+        .CONNECTION_MANAGER_LATENCY (CONNECTION_MANAGER_LATENCY),
 
         .C_S_AXI_DATA_WIDTH         (C_S_AXI_DATA_WIDTH),
         .C_S_AXI_ADDR_WIDTH         (C_S_AXI_ADDR_WIDTH)

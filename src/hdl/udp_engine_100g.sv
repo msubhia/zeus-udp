@@ -28,6 +28,7 @@ module udp_engine_100g #(
     parameter int WAYS                          = 4,
     parameter int HASH_WIDTH                    = 16,
     parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
+    parameter int CONNECTION_MANAGER_LATENCY    = 5,
 
     parameter integer C_S_AXI_DATA_WIDTH	    = 32,
 	parameter integer C_S_AXI_ADDR_WIDTH	    = 7,
@@ -278,13 +279,15 @@ module udp_engine_100g #(
             csr_udp_engine_100g__connManager_wr_connectedId         <= 'b0;
         end else begin
             if (m02_axis_ctrl_valid & m02_axis_ctrl_ready) begin
-                csr_udp_engine_100g__connManager_wr_connectedId     <= {'b0, m02_axis_ctrl_connectionId};
-                csr_udp_engine_100g__connManager_wr_status[0]       <= m02_axis_ctrl_ack;
-                csr_udp_engine_100g__connManager_wr_status[1]       <= m02_axis_ctrl_full;
-                csr_udp_engine_100g__connManager_wr_status[31:2]    <= 'b0;
+                csr_udp_engine_100g__connManager_wr_connectedId[CONN_ID_WIDTH-1:0]  <= m02_axis_ctrl_connectionId;
+                csr_udp_engine_100g__connManager_wr_status[0]                       <= m02_axis_ctrl_ack;
+                csr_udp_engine_100g__connManager_wr_status[1]                       <= m02_axis_ctrl_full;
+                csr_udp_engine_100g__connManager_wr_status[31:2]                    <= 30'b0;
             end else begin
-                csr_udp_engine_100g__connManager_wr_status          <= 'b0;
-                csr_udp_engine_100g__connManager_wr_connectedId     <= 'b0;
+                if (s02_axis_ctrl_ready & csr_udp_engine_100g__connManager_wr_trigger) begin
+                    csr_udp_engine_100g__connManager_wr_status          <= 32'b0;
+                    csr_udp_engine_100g__connManager_wr_connectedId     <= 32'b0;
+                end
             end
         end
     end
@@ -317,7 +320,8 @@ module udp_engine_100g #(
     logic [CONN_ID_WIDTH-1:0]   m00_axis_fw_lookup_connectionId;
 
     connection_manager #(
-        .WAYS(WAYS)
+        .WAYS(WAYS),
+        .BRAM_LATENCY(CONNECTION_MANAGER_LATENCY)
     ) connection_manager_unit (
         // Forward Lookup Channel
         .s00_axis_fw_lookup_aclk(rx_axis_aclk),
