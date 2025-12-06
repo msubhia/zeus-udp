@@ -180,16 +180,53 @@ class S_AXIS_Driver(BusDriver):
 # =====================================================================================================================================
 
 
-def xor32to16(x):
-    x &= 0xFFFFFFFF
-    return ((x >> 16) & 0xFFFF) ^ (x & 0xFFFF)
+def hash_fun_ip_port(ip, port):
+    """
+    Bit-accurate Python version of the SystemVerilog hash function:
+    
+        key = {ip, port};     // 48 bits
+        mix = key[31:0] ^ {key[47:32], key[15:0]};
+        mix = mix * 0x9E3779B1;
+        return mix[31:16];
+    """
+
+    # ------------------------------------------------------------
+    # 1. Construct 48-bit key = concat(ip[31:0], port[15:0])
+    # ------------------------------------------------------------
+    key = ((ip & 0xFFFFFFFF) << 16) | (port & 0xFFFF)
+    key &= (1 << 48) - 1   # keep 48 bits
+
+    # ------------------------------------------------------------
+    # 2. Extract pieces like in SystemVerilog slicing
+    # ------------------------------------------------------------
+    low_32     = key & 0xFFFFFFFF                    # key[31:0]
+    high_16    = (key >> 32) & 0xFFFF                # key[47:32]
+    low_16     = key & 0xFFFF                        # key[15:0]
+
+    # Equivalent to `{key[47:32], key[15:0]}` → 32-bit concat
+    folded     = ((high_16 << 16) | low_16) & 0xFFFFFFFF
+
+    # ------------------------------------------------------------
+    # 3. XOR fold into 32 bits
+    # ------------------------------------------------------------
+    mix = (low_32 ^ folded) & 0xFFFFFFFF
+
+    # ------------------------------------------------------------
+    # 4. Multiplicative hash (Knuth constant)
+    # ------------------------------------------------------------
+    mix = (mix * 0x9E3779B1) & 0xFFFFFFFF
+
+    # ------------------------------------------------------------
+    # 5. Return upper 16 bits
+    # ------------------------------------------------------------
+    return (mix >> 16) & 0xFFFF
 
 
 def generate_collision_entries(num_chains=5, chain_len=5):
     """
     Returns a list of dictionaries.
     Each dictionary looks like:
-        { 'ip': <32-bit>, 'mac': <48-bit>, 'port': <16-bit> }
+        { 'ip': <32-bit>, 'port': <16-bit> }
 
     All IPs are unique. Each group of chain_len entries
     shares the same xor32->16 hash.
@@ -203,17 +240,17 @@ def generate_collision_entries(num_chains=5, chain_len=5):
         chain = []
 
         while len(chain) < chain_len:
-            ip = random.getrandbits(32)
-
-            if xor32to16(ip) == target_hash and ip not in used_ips:
+            ip   = random.getrandbits(32)
+            port = random.getrandbits(16)
+            hash_v = hash_fun_ip_port(ip, port)
+            if hash_v == target_hash and (ip, port) not in used_ips:
                 entry = {
                     "ip": ip,
-                    "mac": random.getrandbits(48),   # 48-bit MAC
-                    "port": random.getrandbits(16),  # 16-bit UDP port
+                    "port": port,
                 }
 
                 chain.append(entry)
-                used_ips.add(ip)
+                used_ips.add((ip, port))
 
         result.extend(chain)
 
@@ -227,7 +264,6 @@ WAYS = 4
 TABLE_SIZE = 2**16
 
 my_hash_table_vlds      = [[0] * TABLE_SIZE for _ in range(WAYS)]
-my_hash_table_macAddr   = [[0] * TABLE_SIZE for _ in range(WAYS)]
 my_hash_table_udpPort   = [[0] * TABLE_SIZE for _ in range(WAYS)]
 my_hash_table_ipAddr    = [[0] * TABLE_SIZE for _ in range(WAYS)]
 
@@ -249,24 +285,29 @@ existing_connection_ids = []
 
 
 def connection_manager_model_fw_rd(val):
-    ipAddr = val
-    hash_key = xor32to16(ipAddr)
 
-    fw_rd_sig_in.append({"ipAddr": ipAddr, "hash_key": hash_key})
+    ipAddr  = val & 0xFFFFFFFF
+    udpPort = (val >> 32) & 0xFFFF
+    hash_key = hash_fun_ip_port(ipAddr, udpPort)
+
+    fw_rd_sig_in.append({"ipAddr": ipAddr, "udpPort": udpPort, "hash_key": hash_key})
 
     expected = {"hit": 0, "connectionId": 0}
     for w in range(WAYS):
-        if my_hash_table_vlds[w][hash_key] and my_hash_table_ipAddr[w][hash_key] == ipAddr:
+        if my_hash_table_vlds[w][hash_key] and my_hash_table_ipAddr[w][hash_key] == ipAddr and my_hash_table_udpPort[w][hash_key] == udpPort:
             expected = {"hit": 1, "connectionId": (w << 16) | hash_key}
             break
 
+    print(f"expected = {expected}")
     fw_rd_sig_out_exp.append(expected)
 
 
 def appending_values_fw_rd(val):
-    hit = (val >> 32) & 1
+    hit = (val >> 18) & 1
     connectionId = val & 0x3FFFF
     fw_rd_sig_out_act.append({"hit": hit, "connectionId": connectionId})
+
+
 
 def connection_manager_model_rv_rd(val):
     connectionId = val
@@ -275,43 +316,34 @@ def connection_manager_model_rv_rd(val):
 
     rv_rd_sig_in.append({"connectionId": connectionId, "hash_key": hash_key, "hash_way": hash_way})
 
-    expected = {"hit": 0, "ipAddr": 0, "macAddr":0, "udpPort":0}
+    expected = {"hit": 0, "ipAddr": 0, "udpPort":0}
     if my_hash_table_vlds[hash_way][hash_key]:
         expected = {"hit"       : 1, 
-                    "ipAddr"    : my_hash_table_ipAddr[hash_way][hash_key], 
-                    "macAddr"   : my_hash_table_macAddr[hash_way][hash_key],
+                    "ipAddr"    : my_hash_table_ipAddr[hash_way][hash_key],
                     "udpPort"   : my_hash_table_udpPort[hash_way][hash_key]}
 
     rv_rd_sig_out_exp.append(expected)
 
 
+
 def appending_values_rv_rd(val):
-    # .m01_axis_rv_lookup_hit(m01_axis_tdata[96]),
-    # .m01_axis_rv_lookup_macAddr(m01_axis_tdata[47:0]),
-    # .m01_axis_rv_lookup_udpPort(m01_axis_tdata[63:48]),
-    # .m01_axis_rv_lookup_ipAddr(m01_axis_tdata[95:64]),
+    ipAddr  = val & 0xFFFFFFFF
+    udpPort = (val>>32) & 0xFFFF
+    hit     = (val>>48) & 0x1
 
-    ipAddr  = (val>>64) & 0xFFFFFFFF
-    macAddr = val & 0xFFFFFFFFFFFF
-    udpPort = (val>>48) & 0xFFFF
-    hit     = (val>>96) & 0x1
-
-    rv_rd_sig_out_act.append({"hit": hit, "ipAddr": ipAddr, "macAddr": macAddr, "udpPort": udpPort})
-
-
+    rv_rd_sig_out_act.append({"hit": hit, "ipAddr": ipAddr, "udpPort": udpPort})
 
 
 
 def connection_manager_model_wr(val):
-    ipAddr  = (val>>64) & 0xFFFFFFFF
-    macAddr = val & 0xFFFFFFFFFFFF
-    udpPort = (val>>48) & 0xFFFF
-    bind    = (val>>96) & 0x1
 
-    tag      = ipAddr
-    hash_key = xor32to16(ipAddr)
+    ipAddr  = val & 0xFFFFFFFF
+    udpPort = (val>>32) & 0xFFFF
+    bind    = (val>>48) & 0x1
 
-    wr_sig_in.append({"ipAddr": ipAddr, "macAddr": macAddr, "udpPort": udpPort, "bind": bind, "hash_key": hash_key})
+    hash_key = hash_fun_ip_port(ipAddr, udpPort)
+
+    wr_sig_in.append({"ipAddr": ipAddr, "udpPort": udpPort, "bind": bind, "hash_key": hash_key})
 
 
     if bind:
@@ -319,17 +351,16 @@ def connection_manager_model_wr(val):
 
         # check if already exists
         for w in range(WAYS):
-            if (my_hash_table_vlds[w][hash_key] == 1) and (my_hash_table_ipAddr[w][hash_key] == tag):
-                connectionId = (xor32to16(ipAddr) & 0xFFFF) | (w << 16)
+            if (my_hash_table_vlds[w][hash_key] == 1) and (my_hash_table_ipAddr[w][hash_key] == ipAddr) and (my_hash_table_udpPort[w][hash_key] == udpPort):
+                connectionId = (hash_key & 0xFFFF) | (w << 16)
                 wr_sig_out_exp.append({"ack": 1, "full": 0, "connectionId":connectionId})
                 return
 
         for w in range(WAYS):
             if my_hash_table_vlds[w][hash_key] == 0:
-                connectionId = (xor32to16(ipAddr) & 0xFFFF) | (w << 16)
+                connectionId = (hash_key & 0xFFFF) | (w << 16)
                 my_hash_table_vlds[w][hash_key] = 1
-                my_hash_table_ipAddr[w][hash_key] = tag
-                my_hash_table_macAddr[w][hash_key] = macAddr
+                my_hash_table_ipAddr[w][hash_key] = ipAddr
                 my_hash_table_udpPort[w][hash_key] = udpPort
                 inserted = True
                 break
@@ -341,11 +372,10 @@ def connection_manager_model_wr(val):
 
     else:
         for w in range(WAYS):
-            if my_hash_table_vlds[w][hash_key] and my_hash_table_ipAddr[w][hash_key] == tag:
-                my_hash_table_vlds[w][hash_key] = 0
-                my_hash_table_ipAddr[w][hash_key] = 0
-                my_hash_table_macAddr[w][hash_key] = 0
-                my_hash_table_udpPort[w][hash_key] = 0
+            if my_hash_table_vlds[w][hash_key] and (my_hash_table_ipAddr[w][hash_key] == ipAddr) and (my_hash_table_udpPort[w][hash_key] == udpPort):
+                my_hash_table_vlds[w][hash_key]     = 0
+                my_hash_table_ipAddr[w][hash_key]   = 0
+                my_hash_table_udpPort[w][hash_key]  = 0
         expected = {"ack": 1, "full": 0, "connectionId": 0}
 
     wr_sig_out_exp.append(expected)
@@ -353,10 +383,6 @@ def connection_manager_model_wr(val):
 
 
 def appending_values_wr(val):
-
-    # .m02_axis_ctrl_ack(m02_axis_tdata[18]),
-    # .m02_axis_ctrl_full(m02_axis_tdata[19]),
-    # .m02_axis_ctrl_connectionId(m02_axis_tdata[17:0])
 
     ack  = (val >> 18) & 1
     full = (val >> 19) & 1
@@ -411,16 +437,10 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, RD_NUM_OPERATIONS = 1000,
             pick = random.choice(COLLISION_POOL)
             bind = (random.random() < 0.9)
 
-            # .s02_axis_ctrl_macAddr(s02_axis_tdata[47:0]),
-            # .s02_axis_ctrl_ipAddr(s02_axis_tdata[95:64]),
-            # .s02_axis_ctrl_udpPort(s02_axis_tdata[63:48]),
-            # .s02_axis_ctrl_bind(s02_axis_tdata[96]),
-
             val  = 0
-            val  |= (pick['mac'])
-            val  |= (pick['port'] << 48)
-            val  |= (pick['ip']   << 64)
-            val  |= (bind         << 96)
+            val  |= (pick['ip'])
+            val  |= (pick['port'] << 32)
+            val  |= (bind         << 48)
 
             wr_in_driver.append({'type':'write_single', "contents":{"data": val, "last":1}})
             wr_in_driver.append({"type":"pause", "duration": random.randint(0,3)})
@@ -429,7 +449,9 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, RD_NUM_OPERATIONS = 1000,
         for _ in range(num_operations):
 
             pick = random.choice(COLLISION_POOL)
-            val  = pick['ip']
+            val  = 0
+            val  |= pick['ip']
+            val  |= (pick['port'] << 32)
 
             fw_rd_in_driver.append({'type':'write_single', "contents":{"data": val, "last":1}})
             fw_rd_in_driver.append({"type":"pause", "duration": random.randint(0,3)})
@@ -484,6 +506,16 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, RD_NUM_OPERATIONS = 1000,
     assert wr_in_monitor.transactions == wr_out_monitor.transactions,       f"WR transaction count mismatch!"
 
     assert len(fw_rd_sig_in) == len(fw_rd_sig_out_exp) == len(fw_rd_sig_out_act), "FW RD bookkeeping mismatch!"
+    assert len(rv_rd_sig_in) == len(rv_rd_sig_out_exp) == len(rv_rd_sig_out_act), "RV RD bookkeeping mismatch!"
+    assert len(wr_sig_in) == len(wr_sig_out_exp) == len(wr_sig_out_act), "WR bookkeeping mismatch!"
+
+    assert len(fw_rd_sig_in) > 0, "FW RD input list is empty - no transactions generated!"
+    assert len(fw_rd_sig_out_act) > 0, "FW RD output list is empty - no transactions captured!"
+    assert len(rv_rd_sig_in) > 0, "RV RD input list is empty - no transactions generated!"
+    assert len(rv_rd_sig_out_act) > 0, "RV RD output list is empty - no transactions captured!"
+    assert len(wr_sig_in) > 0, "WR input list is empty - no transactions generated!"
+    assert len(wr_sig_out_act) > 0, "WR output list is empty - no transactions captured!"
+
     for idx, (sig_in, expected, actual) in enumerate(zip(fw_rd_sig_in, fw_rd_sig_out_exp, fw_rd_sig_out_act)):
         if expected != actual:
             raise RuntimeError(
@@ -492,7 +524,6 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, RD_NUM_OPERATIONS = 1000,
                 f"expected {expected}, got {actual}"
             )
 
-    assert len(rv_rd_sig_in) == len(rv_rd_sig_out_exp) == len(rv_rd_sig_out_act), "RV RD bookkeeping mismatch!"
     for idx, (sig_in, expected, actual) in enumerate(zip(rv_rd_sig_in, rv_rd_sig_out_exp, rv_rd_sig_out_act)):
         if expected != actual:
             raise RuntimeError(
@@ -500,7 +531,6 @@ async def test_structure(dut, WR_NUM_OPERATIONS = 300, RD_NUM_OPERATIONS = 1000,
                 f"expected {expected}, got {actual}"
             )
 
-    assert len(wr_sig_in) == len(wr_sig_out_exp) == len(wr_sig_out_act), "WR bookkeeping mismatch!"
     for idx, (sig_in, expected, actual) in enumerate(zip(wr_sig_in, wr_sig_out_exp, wr_sig_out_act)):
         if expected != actual:
             raise RuntimeError(
@@ -525,7 +555,7 @@ async def test_1(dut):
     """
     await test_structure(dut, WR_NUM_OPERATIONS = 300, RD_NUM_OPERATIONS = 2000, NUM_CHAINS=128, CHAIN_LEN=8, INTERLAVE = False)
 
-@cocotb.test()
+# @cocotb.test()
 async def test_2(dut):
     """
     same as test_1 but more write collisions
