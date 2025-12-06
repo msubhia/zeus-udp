@@ -20,8 +20,8 @@
 		output wire [31:0] 	csr_udp_engine_100g__myConfig_macAddr_lower,
 		output wire [31:0] 	csr_udp_engine_100g__myConfig_ipAddr,
 		output wire [31:0] 	csr_udp_engine_100g__myConfig_udpPort,
-		output wire [31:0]  csr_udp_engine_100g__connManager_wr_macAddr_upper,
-		output wire [31:0]  csr_udp_engine_100g__connManager_wr_macAddr_lower,
+		output wire [31:0]  csr_udp_engine_100g__myConfig_macAddr_upper_dst,
+		output wire [31:0]  csr_udp_engine_100g__myConfig_macAddr_lower_dst,
 		output wire [31:0]  csr_udp_engine_100g__connManager_wr_ip_addr,
 		output wire [31:0]  csr_udp_engine_100g__connManager_wr_port,
 		output wire [31:0]  csr_udp_engine_100g__connManager_wr_bind,
@@ -644,8 +644,8 @@
 	reg [31:0] 	reg____csr_udp_engine_100g__myConfig_macAddr_lower;
 	reg [31:0] 	reg____csr_udp_engine_100g__myConfig_ipAddr;
 	reg [31:0] 	reg____csr_udp_engine_100g__myConfig_udpPort;
-	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_macAddr_upper;
-	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_macAddr_lower;
+	reg [31:0]  reg____csr_udp_engine_100g__myConfig_macAddr_upper_dst;
+	reg [31:0]  reg____csr_udp_engine_100g__myConfig_macAddr_lower_dst;
 	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_ip_addr;
 	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_port;
 	reg [31:0]  reg____csr_udp_engine_100g__connManager_wr_bind;
@@ -656,8 +656,8 @@
 		reg____csr_udp_engine_100g__myConfig_macAddr_lower			= slv_reg2;
 		reg____csr_udp_engine_100g__myConfig_ipAddr					= slv_reg3;
 		reg____csr_udp_engine_100g__myConfig_udpPort				= slv_reg4;
-		reg____csr_udp_engine_100g__connManager_wr_macAddr_upper	= slv_reg5;
-		reg____csr_udp_engine_100g__connManager_wr_macAddr_lower	= slv_reg6;
+		reg____csr_udp_engine_100g__myConfig_macAddr_upper_dst		= slv_reg5;
+		reg____csr_udp_engine_100g__myConfig_macAddr_lower_dst		= slv_reg6;
 		reg____csr_udp_engine_100g__connManager_wr_ip_addr			= slv_reg7;
 		reg____csr_udp_engine_100g__connManager_wr_port				= slv_reg8;
 		reg____csr_udp_engine_100g__connManager_wr_bind				= slv_reg9;
@@ -668,8 +668,8 @@
 	assign csr_udp_engine_100g__myConfig_macAddr_lower 			= reg____csr_udp_engine_100g__myConfig_macAddr_lower;
 	assign csr_udp_engine_100g__myConfig_ipAddr 				= reg____csr_udp_engine_100g__myConfig_ipAddr;
 	assign csr_udp_engine_100g__myConfig_udpPort 				= reg____csr_udp_engine_100g__myConfig_udpPort;
-	assign csr_udp_engine_100g__connManager_wr_macAddr_upper	= reg____csr_udp_engine_100g__connManager_wr_macAddr_upper;
-	assign csr_udp_engine_100g__connManager_wr_macAddr_lower	= reg____csr_udp_engine_100g__connManager_wr_macAddr_lower;
+	assign csr_udp_engine_100g__myConfig_macAddr_upper_dst		= reg____csr_udp_engine_100g__myConfig_macAddr_upper_dst;
+	assign csr_udp_engine_100g__myConfig_macAddr_lower_dst		= reg____csr_udp_engine_100g__myConfig_macAddr_lower_dst;
 	assign csr_udp_engine_100g__connManager_wr_ip_addr 			= reg____csr_udp_engine_100g__connManager_wr_ip_addr;
 	assign csr_udp_engine_100g__connManager_wr_port 			= reg____csr_udp_engine_100g__connManager_wr_port;
 	assign csr_udp_engine_100g__connManager_wr_bind 			= reg____csr_udp_engine_100g__connManager_wr_bind;
