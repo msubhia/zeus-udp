@@ -1,7 +1,7 @@
 `default_nettype none
 `timescale 1ns/1ps
 
-`include "zeus_rpc.svh"
+`include "udp_engine_100g.svh"
 
 // ============================================================================
 // Ethernet TX IP
@@ -9,38 +9,16 @@
 //
 // Authors:          M.Subhi Abordan (msubhi_a@mit.edu)
 //                   Mena Filfil     (menaf@mit.edu)
-// Last Modified:    Dec 3, 2025
+// Last Modified:    Dec 5, 2025
 //
 // ============================================================================
 // END
 // ============================================================================
 
-function automatic logic [31:0] swap_bytes_4(input logic [31:0] din);
-    for (int i = 0; i < 4; i++) begin
-        swap_bytes_4[i*8 +: 8] = din[(4-1-i)*8 +: 8];
-    end
-endfunction
 
 module ethernet_tx #(
-    parameter int DATA_WIDTH                    = 512,
-    parameter int CONN_ID_WIDTH                 = 18,
-    parameter int IP_UDP_DSCP                   = 0,
-    parameter int IP_UDP_ENC                    = 0,
-    parameter int IP_UDP_IDEN                   = 0,
-    parameter int IP_UDP_FLAGS                  = 0,
-    parameter int IP_UDP_FRAG_OFFSET            = 0,
-    parameter int IP_UDP_TTL                    = 64,
-
-    localparam int IP_ADDR_WIDTH                = 32,
-    localparam int MAC_ADDR_WIDTH               = 48,
-    localparam int UDP_PORT_WIDTH               = 16,
-    localparam int CONNECTION_META_WIDTH        = IP_ADDR_WIDTH + MAC_ADDR_WIDTH + UDP_PORT_WIDTH + 8,
-    localparam int IP_PACKET_LENGTH_WIDTH       = 16,
-    localparam int ETH_HEADER_BYTES             = 14,
-    localparam int IP_HEADER_BYTES              = 20,
-    localparam int UDP_HEADER_BYTES             = 8,
-    localparam int TOTAL_HEADERS_BYTES          = ETH_HEADER_BYTES + IP_HEADER_BYTES + UDP_HEADER_BYTES,
-    localparam int TOTAL_HEADERS_BITS           = TOTAL_HEADERS_BYTES * 8
+    parameter int DATA_WIDTH    = 512,
+    parameter int CONN_ID_WIDTH
 ) (
     // ----------------------------------------------------------------
     // CONTROL AND STATUS
@@ -52,9 +30,10 @@ module ethernet_tx #(
     // ----------------------------------------------------------------
     // CONNECTION CONFIGURATION
     // ----------------------------------------------------------------
-    input wire [IP_ADDR_WIDTH-1:0]      my_config_ipAddr,
-    input wire [MAC_ADDR_WIDTH-1:0]     my_config_macAddr,
-    input wire [UDP_PORT_WIDTH-1:0]     my_config_udpPort,
+    input wire [MAC_ADDR_WIDTH-1:0]     my_config_dst_macAddr,
+    input wire [MAC_ADDR_WIDTH-1:0]     my_config_src_macAddr,
+    input wire [IP_ADDR_WIDTH-1:0]      my_config_src_ipAddr,
+    input wire [UDP_PORT_WIDTH-1:0]     my_config_src_udpPort,
 
     // ----------------------------------------------------------------
     // CMAC TX
@@ -85,7 +64,6 @@ module ethernet_tx #(
     output logic                        s01_axis_rv_lookup_ready, // assumed always 1
     input wire                          s01_axis_rv_lookup_valid,
     input wire                          s01_axis_rv_lookup_hit,
-    input wire [MAC_ADDR_WIDTH-1:0]     s01_axis_rv_lookup_macAddr,
     input wire [IP_ADDR_WIDTH-1:0]      s01_axis_rv_lookup_ipAddr,
     input wire [UDP_PORT_WIDTH-1:0]     s01_axis_rv_lookup_udpPort
 );
@@ -157,7 +135,7 @@ module ethernet_tx #(
 
         .s_aclk(tx_axis_aclk),
         .s_aresetn(tx_axis_aresetn),
-        .s_axis_tdata({7'b0, s01_axis_rv_lookup_hit, s01_axis_rv_lookup_macAddr, s01_axis_rv_lookup_udpPort, s01_axis_rv_lookup_ipAddr}),
+        .s_axis_tdata({7'b0, s01_axis_rv_lookup_hit, s01_axis_rv_lookup_udpPort, s01_axis_rv_lookup_ipAddr}),
         .s_axis_tkeep({(CONNECTION_META_WIDTH/8){1'b1}}),
         .s_axis_tlast(1'b1),
         .s_axis_tvalid(s01_axis_rv_lookup_valid & tx_engine_enable),
@@ -241,10 +219,10 @@ module ethernet_tx #(
     assign s01_axis_rv_lookup_ready         = 1'b1;
 
     always_ff @(posedge tx_axis_aclk) begin // pipeline to meet timing
-        m01_axis_rv_lookup_valid_pipe <= udp_tx_axis_tvalid & udp_tx_axis_tready & is_first_transaction;
-        m01_axis_rv_lookup_connectionId_pipe <= swap_bytes_4(udp_tx_axis_tdata[31:0]);
-
+        m01_axis_rv_lookup_valid_pipe           <= udp_tx_axis_tvalid & udp_tx_axis_tready & is_first_transaction;
+        m01_axis_rv_lookup_connectionId_pipe    <= swap_bytes_4(udp_tx_axis_tdata[31:0]);
     end
+
     assign m01_axis_rv_lookup_valid         = m01_axis_rv_lookup_valid_pipe;
     assign m01_axis_rv_lookup_connectionId  = m01_axis_rv_lookup_connectionId_pipe[CONN_ID_WIDTH-1:0];
     
@@ -262,19 +240,14 @@ module ethernet_tx #(
 
     tx_headers_prepend #(
         .DATA_WIDTH(DATA_WIDTH),
-        .CONN_ID_WIDTH(CONN_ID_WIDTH),
-        .IP_UDP_DSCP(IP_UDP_DSCP),
-        .IP_UDP_ENC(IP_UDP_ENC),
-        .IP_UDP_IDEN(IP_UDP_IDEN),
-        .IP_UDP_FLAGS(IP_UDP_FLAGS),
-        .IP_UDP_FRAG_OFFSET(IP_UDP_FRAG_OFFSET),
-        .IP_UDP_TTL(IP_UDP_TTL)
+        .CONN_ID_WIDTH(CONN_ID_WIDTH)
     ) tx_headers_prepend_unit (
         .tx_axis_aclk(tx_axis_aclk),
         .tx_axis_aresetn(tx_axis_aresetn),
-        .my_config_ipAddr(my_config_ipAddr),
-        .my_config_macAddr(my_config_macAddr),
-        .my_config_udpPort(my_config_udpPort),
+        .my_config_dst_macAddr(my_config_dst_macAddr),
+        .my_config_src_macAddr(my_config_src_macAddr),
+        .my_config_src_ipAddr(my_config_src_ipAddr),
+        .my_config_src_udpPort(my_config_src_udpPort),
 
         .packet_fifo_tlast(packet_fifo_tlast),
         .packet_fifo_tvalid(packet_fifo_tvalid),

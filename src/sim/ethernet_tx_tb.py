@@ -183,16 +183,53 @@ class S_AXIS_Driver(BusDriver):
 # =====================================================================================================================================
 
 
-def xor32to16(x):
-    x &= 0xFFFFFFFF
-    return ((x >> 16) & 0xFFFF) ^ (x & 0xFFFF)
+def hash_fun_ip_port(ip, port):
+    """
+    Bit-accurate Python version of the SystemVerilog hash function:
+    
+        key = {ip, port};     // 48 bits
+        mix = key[31:0] ^ {key[47:32], key[15:0]};
+        mix = mix * 0x9E3779B1;
+        return mix[31:16];
+    """
+
+    # ------------------------------------------------------------
+    # 1. Construct 48-bit key = concat(ip[31:0], port[15:0])
+    # ------------------------------------------------------------
+    key = ((ip & 0xFFFFFFFF) << 16) | (port & 0xFFFF)
+    key &= (1 << 48) - 1   # keep 48 bits
+
+    # ------------------------------------------------------------
+    # 2. Extract pieces like in SystemVerilog slicing
+    # ------------------------------------------------------------
+    low_32     = key & 0xFFFFFFFF                    # key[31:0]
+    high_16    = (key >> 32) & 0xFFFF                # key[47:32]
+    low_16     = key & 0xFFFF                        # key[15:0]
+
+    # Equivalent to `{key[47:32], key[15:0]}` → 32-bit concat
+    folded     = ((high_16 << 16) | low_16) & 0xFFFFFFFF
+
+    # ------------------------------------------------------------
+    # 3. XOR fold into 32 bits
+    # ------------------------------------------------------------
+    mix = (low_32 ^ folded) & 0xFFFFFFFF
+
+    # ------------------------------------------------------------
+    # 4. Multiplicative hash (Knuth constant)
+    # ------------------------------------------------------------
+    mix = (mix * 0x9E3779B1) & 0xFFFFFFFF
+
+    # ------------------------------------------------------------
+    # 5. Return upper 16 bits
+    # ------------------------------------------------------------
+    return (mix >> 16) & 0xFFFF
 
 
 def generate_collision_entries(num_chains=5, chain_len=5):
     """
     Returns a list of dictionaries.
     Each dictionary looks like:
-        { 'ip': <32-bit>, 'mac': <48-bit>, 'port': <16-bit> }
+        { 'ip': <32-bit>, 'port': <16-bit> }
 
     All IPs are unique. Each group of chain_len entries
     shares the same xor32->16 hash.
@@ -206,17 +243,17 @@ def generate_collision_entries(num_chains=5, chain_len=5):
         chain = []
 
         while len(chain) < chain_len:
-            ip = random.getrandbits(32)
-
-            if xor32to16(ip) == target_hash and ip not in used_ips:
+            ip   = random.getrandbits(32)
+            port = random.getrandbits(16)
+            hash_v = hash_fun_ip_port(ip, port)
+            if hash_v == target_hash and (ip, port) not in used_ips:
                 entry = {
                     "ip": ip,
-                    "mac": random.getrandbits(48),   # 48-bit MAC
-                    "port": random.getrandbits(16),  # 16-bit UDP port
+                    "port": port,
                 }
 
                 chain.append(entry)
-                used_ips.add(ip)
+                used_ips.add((ip, port))
 
         result.extend(chain)
 
@@ -227,7 +264,6 @@ WAYS = 4
 TABLE_SIZE = 2**16
 
 my_hash_table_vlds      = [[0] * TABLE_SIZE for _ in range(WAYS)]
-my_hash_table_macAddr   = [[0] * TABLE_SIZE for _ in range(WAYS)]
 my_hash_table_udpPort   = [[0] * TABLE_SIZE for _ in range(WAYS)]
 my_hash_table_ipAddr    = [[0] * TABLE_SIZE for _ in range(WAYS)]
 
@@ -241,15 +277,13 @@ existing_connection_ids = []
 
 def connection_manager_model_wr(val):
     val = val[0]
-    ipAddr  = (val>>64) & 0xFFFFFFFF
-    macAddr = val & 0xFFFFFFFFFFFF
-    udpPort = (val>>48) & 0xFFFF
-    bind    = (val>>96) & 0x1
+    ipAddr  = val & 0xFFFFFFFF
+    udpPort = (val>>32) & 0xFFFF
+    bind    = (val>>48) & 0x1
 
-    tag      = ipAddr
-    hash_key = xor32to16(ipAddr)
+    hash_key = hash_fun_ip_port(ipAddr, udpPort)
 
-    wr_sig_in.append({"ipAddr": ipAddr, "macAddr": macAddr, "udpPort": udpPort, "bind": bind, "hash_key": hash_key})
+    wr_sig_in.append({"ipAddr": ipAddr, "udpPort": udpPort, "bind": bind, "hash_key": hash_key})
 
 
     if bind:
@@ -257,17 +291,16 @@ def connection_manager_model_wr(val):
 
         # check if already exists
         for w in range(WAYS):
-            if (my_hash_table_vlds[w][hash_key] == 1) and (my_hash_table_ipAddr[w][hash_key] == tag):
-                connectionId = (xor32to16(ipAddr) & 0xFFFF) | (w << 16)
+            if (my_hash_table_vlds[w][hash_key] == 1) and (my_hash_table_ipAddr[w][hash_key] == ipAddr) and (my_hash_table_udpPort[w][hash_key] == udpPort):
+                connectionId = (hash_key & 0xFFFF) | (w << 16)
                 wr_sig_out_exp.append({"ack": 1, "full": 0, "connectionId":connectionId})
                 return
 
         for w in range(WAYS):
             if my_hash_table_vlds[w][hash_key] == 0:
-                connectionId = (xor32to16(ipAddr) & 0xFFFF) | (w << 16)
+                connectionId = (hash_key & 0xFFFF) | (w << 16)
                 my_hash_table_vlds[w][hash_key] = 1
-                my_hash_table_ipAddr[w][hash_key] = tag
-                my_hash_table_macAddr[w][hash_key] = macAddr
+                my_hash_table_ipAddr[w][hash_key] = ipAddr
                 my_hash_table_udpPort[w][hash_key] = udpPort
                 inserted = True
                 break
@@ -279,16 +312,10 @@ def connection_manager_model_wr(val):
 
     else:
         for w in range(WAYS):
-            if my_hash_table_vlds[w][hash_key] and my_hash_table_ipAddr[w][hash_key] == tag:
-                my_hash_table_vlds[w][hash_key] = 0
-                my_hash_table_ipAddr[w][hash_key] = 0
-                my_hash_table_macAddr[w][hash_key] = 0
-                my_hash_table_udpPort[w][hash_key] = 0
-
-                connectionId = (xor32to16(ipAddr) & 0xFFFF) | (w << 16)
-                while (connectionId in existing_connection_ids):
-                    existing_connection_ids.remove(connectionId)
-
+            if my_hash_table_vlds[w][hash_key] and (my_hash_table_ipAddr[w][hash_key] == ipAddr) and (my_hash_table_udpPort[w][hash_key] == udpPort):
+                my_hash_table_vlds[w][hash_key]     = 0
+                my_hash_table_ipAddr[w][hash_key]   = 0
+                my_hash_table_udpPort[w][hash_key]  = 0
         expected = {"ack": 1, "full": 0, "connectionId": 0}
 
     wr_sig_out_exp.append(expected)
@@ -310,9 +337,10 @@ def appending_values_wr(val):
 # PYTHON MODEL (UDP)
 # =====================================================================================================================================
 
-MY_CONFIG_MAC   =   random.getrandbits(48)
-MY_CONFIG_IP    =   random.getrandbits(32)
-MY_CONFIG_PORT  =   random.getrandbits(16)
+MY_CONFIG_DST_MAC   =   random.getrandbits(48)
+MY_CONFIG_SRC_MAC   =   random.getrandbits(48)
+MY_CONFIG_SRC_IP    =   random.getrandbits(32)
+MY_CONFIG_SRC_PORT  =   random.getrandbits(16)
 
 IP_UDP_DSCP                   = 0
 IP_UDP_ENC                    = 0
@@ -452,7 +480,7 @@ def build_ipv4_header(payload_length_bytes,
     return ip_header
 
 
-def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_MAC, MY_CONFIG_IP, MY_CONFIG_PORT):
+def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_SRC_MAC, MY_CONFIG_SRC_IP, MY_CONFIG_SRC_PORT, MY_CONFIG_DST_MAC):
 
     hash_key     = connection_id & 0xFFFF
     hash_way     = connection_id >> 16
@@ -463,7 +491,6 @@ def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_MAC,
         return
 
     dst_ipAddr  = my_hash_table_ipAddr[hash_way][hash_key]
-    dst_macAddr = my_hash_table_macAddr[hash_way][hash_key]
     dst_udpPort = my_hash_table_udpPort[hash_way][hash_key]
 
     ETHTYPE_IP       = 0x0800
@@ -476,8 +503,8 @@ def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_MAC,
     # ======================================================
     ethernet_header = (
         (swap_bytes(ETHTYPE_IP, 2) << (2*48))   |
-        (swap_bytes(MY_CONFIG_MAC, 6) << 48)    |
-        swap_bytes(dst_macAddr, 6)
+        (swap_bytes(MY_CONFIG_SRC_MAC, 6) << 48)    |
+        swap_bytes(MY_CONFIG_DST_MAC, 6)
     )
 
     # ======================================================
@@ -485,7 +512,7 @@ def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_MAC,
     # ======================================================
     ip_header = build_ipv4_header(
         payload_length_bytes          = payload_length_bytes,
-        src_ip                        = MY_CONFIG_IP,
+        src_ip                        = MY_CONFIG_SRC_IP,
         dst_ip                        = dst_ipAddr,
         dscp                          = IP_UDP_DSCP,
         ecn                           = IP_UDP_ENC,
@@ -505,7 +532,7 @@ def model_udp(connection_id, payload_length_bytes, payload_bytes, MY_CONFIG_MAC,
         (swap_bytes(0, 2) << 48) |
         (swap_bytes(payload_length_bytes + UDP_HEADER_BYTES, 2)  << 32)   |
         (swap_bytes(dst_udpPort, 2) << 16) |
-        swap_bytes(MY_CONFIG_PORT, 2)   # checksum (unused in IPv4)
+        swap_bytes(MY_CONFIG_SRC_PORT, 2)   # checksum (unused in IPv4)
     )
 
     # ======================================================
@@ -597,9 +624,12 @@ async def test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, N
     await ClockCycles(dut.s00_axis_aclk, 3)
     dut.tx_engine_enable.value = 1
     await ClockCycles(dut.s00_axis_aclk, 3)
-    dut.my_config_ipAddr.value  = MY_CONFIG_IP
-    dut.my_config_macAddr.value = MY_CONFIG_MAC
-    dut.my_config_udpPort.value = MY_CONFIG_PORT
+
+    dut.my_config_dst_macAddr.value = MY_CONFIG_DST_MAC
+    dut.my_config_src_macAddr.value = MY_CONFIG_SRC_MAC
+    dut.my_config_src_ipAddr.value  = MY_CONFIG_SRC_IP
+    dut.my_config_src_udpPort.value = MY_CONFIG_SRC_PORT
+
     await ClockCycles(dut.s00_axis_aclk, 3)
 
     #
@@ -616,10 +646,9 @@ async def test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, N
             bind = (random.random() < 0.9)
 
             val  = 0
-            val  |= (pick['mac'])
-            val  |= (pick['port'] << 48)
-            val  |= (pick['ip']   << 64)
-            val  |= (bind         << 96)
+            val  |= (pick['ip'])
+            val  |= (pick['port'] << 32)
+            val  |= (bind         << 48)
 
             wr_in_driver.append({'type':'write_single', "contents":{"data": val, "last":1}})
             wr_in_driver.append({"type":"pause", "duration": random.randint(0,3)})
@@ -651,7 +680,7 @@ async def test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, N
     for _ in range(NUM_TEST_PACKETS):
         beats, connection_id, payload_length_bytes, payload = generate_random_packet(existing_connection_ids)
         print(f"packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}")
-        model_udp(connection_id, payload_length_bytes, payload, MY_CONFIG_MAC, MY_CONFIG_IP, MY_CONFIG_PORT)
+        model_udp(connection_id, payload_length_bytes, payload, MY_CONFIG_SRC_MAC, MY_CONFIG_SRC_IP, MY_CONFIG_SRC_PORT, MY_CONFIG_DST_MAC)
 
         udp_in_driver.append({'type':'write_burst', "contents": {"data": [tdata for (tdata, tkeep, tlast) in beats],
                                                                  "keep": [tkeep for (tdata, tkeep, tlast) in beats]}})
@@ -685,7 +714,7 @@ async def test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, N
 
 @cocotb.test()
 async def test_1(dut):
-    await test_structure(dut, NUM_TEST_PACKETS = 100, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8)
+    await test_structure(dut, NUM_TEST_PACKETS = 500, WR_NUM_OPERATIONS = 300, NUM_CHAINS=128, CHAIN_LEN=8)
 
 
 

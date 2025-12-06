@@ -1,20 +1,7 @@
 `default_nettype none
 `timescale 1ns/1ps
 
-`include "zeus_rpc.svh"
-
-// helper functions
-function automatic logic [15:0] swap_bytes_2(input logic [15:0] din);
-    swap_bytes_2 = {din[7:0], din[15:8]};
-endfunction
-
-function automatic logic [47:0] swap_bytes_6(input logic [47:0] din);
-    for (int i = 0; i < 6; i++) begin
-        swap_bytes_6[i*8 +: 8] = din[(6-1-i)*8 +: 8];
-    end
-endfunction
-
-
+`include "udp_engine_100g.svh"
 
 // ==================================================================================================
 // TX Ethernet, IP, UDP Headers Prepend IP
@@ -22,7 +9,7 @@ endfunction
 //
 // Author:          M.Subhi Abordan (msubhi_a@mit.edu)
 //                  Mena Filfil     (menaf@mit.edu)
-// Last Modified:   Dec 1, 2025
+// Last Modified:   Dec 5, 2025
 //
 //==================================================================================================
 //
@@ -71,32 +58,16 @@ endfunction
 
 
 module tx_headers_prepend #(
-    parameter int DATA_WIDTH                    = 512,
-    parameter int CONN_ID_WIDTH                 = 18,
-    parameter int IP_UDP_DSCP                   = 0,
-    parameter int IP_UDP_ENC                    = 0,
-    parameter int IP_UDP_IDEN                   = 0,
-    parameter int IP_UDP_FLAGS                  = 0,
-    parameter int IP_UDP_FRAG_OFFSET            = 0,
-    parameter int IP_UDP_TTL                    = 64,
-
-    localparam int IP_ADDR_WIDTH                = 32,
-    localparam int MAC_ADDR_WIDTH               = 48,
-    localparam int UDP_PORT_WIDTH               = 16,
-    localparam int CONNECTION_META_WIDTH        = IP_ADDR_WIDTH + MAC_ADDR_WIDTH + UDP_PORT_WIDTH + 8,
-    localparam int IP_PACKET_LENGTH_WIDTH       = 16,
-    localparam int ETH_HEADER_BYTES             = 14,
-    localparam int IP_HEADER_BYTES              = 20,
-    localparam int UDP_HEADER_BYTES             = 8,
-    localparam int TOTAL_HEADERS_BYTES          = ETH_HEADER_BYTES + IP_HEADER_BYTES + UDP_HEADER_BYTES,
-    localparam int TOTAL_HEADERS_BITS           = TOTAL_HEADERS_BYTES * 8
+    parameter int DATA_WIDTH    = 512,
+    parameter int CONN_ID_WIDTH
 ) (
     input wire                                  tx_axis_aclk,
     input wire                                  tx_axis_aresetn,
 
-    input wire [IP_ADDR_WIDTH-1:0]              my_config_ipAddr,
-    input wire [MAC_ADDR_WIDTH-1:0]             my_config_macAddr,
-    input wire [UDP_PORT_WIDTH-1:0]             my_config_udpPort,
+    input wire [MAC_ADDR_WIDTH-1:0]             my_config_dst_macAddr,
+    input wire [MAC_ADDR_WIDTH-1:0]             my_config_src_macAddr,
+    input wire [IP_ADDR_WIDTH-1:0]              my_config_src_ipAddr,
+    input wire [UDP_PORT_WIDTH-1:0]             my_config_src_udpPort,
 
     input wire                                  packet_fifo_tlast,
     input wire                                  packet_fifo_tvalid,
@@ -123,12 +94,10 @@ module tx_headers_prepend #(
     // parsing connection metadata
     logic                       dst_connection_hit;
     logic [IP_ADDR_WIDTH-1:0]   dst_ipAddr;
-    logic [MAC_ADDR_WIDTH-1:0]  dst_macAddr;
     logic [UDP_PORT_WIDTH-1:0]  dst_udpPort;
 
-    assign dst_connection_hit   = connection_fifo_tdata[96];
+    assign dst_connection_hit   = connection_fifo_tdata[48];
     assign dst_ipAddr           = connection_fifo_tdata[31:0];
-    assign dst_macAddr          = connection_fifo_tdata[95:48];
     assign dst_udpPort          = connection_fifo_tdata[47:32];
 
     // ==================================================================================================
@@ -140,8 +109,8 @@ module tx_headers_prepend #(
     logic [63:0] my_udp_header;
 
     always_comb begin: HEADERS_CONSTRUCTION
-        my_eth_header[47:0]     = swap_bytes_6(dst_macAddr);
-        my_eth_header[95:48]    = swap_bytes_6(my_config_macAddr);
+        my_eth_header[47:0]     = swap_bytes_6(my_config_dst_macAddr);
+        my_eth_header[95:48]    = swap_bytes_6(my_config_src_macAddr);
         my_eth_header[111:96]   = swap_bytes_2(ETHTYPE_IP);
 
         my_ip_header[7:4]       = IP_VERSION_IPV4;
@@ -154,10 +123,10 @@ module tx_headers_prepend #(
         my_ip_header[79:72]     = IPPROTO_UDP;
         my_ip_header[31:16]     = swap_bytes_2(payload_length_fifo_tdata + IP_HEADER_BYTES + UDP_HEADER_BYTES);
         my_ip_header[95:80]     = 16'b0; // ip_hdr_checksum to be computed by downstream module
-        my_ip_header[127:96]    = swap_bytes_4(my_config_ipAddr);
+        my_ip_header[127:96]    = swap_bytes_4(my_config_src_ipAddr);
         my_ip_header[159:128]   = swap_bytes_4(dst_ipAddr);
 
-        my_udp_header[15:0]     = swap_bytes_2(my_config_udpPort);
+        my_udp_header[15:0]     = swap_bytes_2(my_config_src_udpPort);
         my_udp_header[31:16]    = swap_bytes_2(dst_udpPort);
         my_udp_header[47:32]    = swap_bytes_2(payload_length_fifo_tdata + UDP_HEADER_BYTES);
         my_udp_header[63:48]    = 16'b0; // udp_checksum optional in IPv4

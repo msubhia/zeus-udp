@@ -1,32 +1,20 @@
 `default_nettype none
 `timescale 1ns/1ps
 
-`include "zeus_rpc.svh"
+`include "udp_engine_100g.svh"
 
 // wapper around connection manager and tx
 
 module ethernet_tx_wrapper #(
     parameter int DATA_WIDTH                    = 512,
-    parameter int KEEP_WIDTH                    = DATA_WIDTH/8,
-
-    parameter int IP_UDP_DSCP                   = 0,
-    parameter int IP_UDP_ENC                    = 0,
-    parameter int IP_UDP_IDEN                   = 0,
-    parameter int IP_UDP_FLAGS                  = 0,
-    parameter int IP_UDP_FRAG_OFFSET            = 0,
-    parameter int IP_UDP_TTL                    = 64,
-
     parameter int WAYS                          = 4,
-    parameter int HASH_WIDTH                    = 16,
-    parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS),
-
-    localparam int IP_ADDR_WIDTH                = 32,
-    localparam int MAC_ADDR_WIDTH               = 48,
-    localparam int UDP_PORT_WIDTH               = 16
+    parameter int BRAM_LATENCY                  = 5,
+    parameter int CONN_ID_WIDTH                 = HASH_WIDTH + $clog2(WAYS)
 ) (
-    input wire [31:0]   my_config_ipAddr,
-    input wire [47:0]   my_config_macAddr,
-    input wire [15:0]   my_config_udpPort,
+    input wire [MAC_ADDR_WIDTH-1:0]             my_config_dst_macAddr,
+    input wire [MAC_ADDR_WIDTH-1:0]             my_config_src_macAddr,
+    input wire [IP_ADDR_WIDTH-1:0]              my_config_src_ipAddr,
+    input wire [UDP_PORT_WIDTH-1:0]             my_config_src_udpPort,
 
     // Ports of Axi Slave Bus Interface S00_AXIS
     input wire          tx_engine_enable,
@@ -51,8 +39,8 @@ module ethernet_tx_wrapper #(
     input wire          s02_axis_aresetn,
     input wire          s02_axis_tvalid,
     input wire          s02_axis_tlast, 
-    input wire [127:0]  s02_axis_tdata,
-    input wire [6:0]    s02_axis_tstrb,
+    input wire [63:0]   s02_axis_tdata,
+    input wire [5:0]    s02_axis_tstrb,
     output wire         s02_axis_tready,
 
     input wire          m02_axis_aclk, 
@@ -71,7 +59,6 @@ module ethernet_tx_wrapper #(
     logic                           m01_axis_rv_lookup_ready;
     logic                           m01_axis_rv_lookup_valid;
     logic                           m01_axis_rv_lookup_hit;
-    logic [MAC_ADDR_WIDTH-1:0]      m01_axis_rv_lookup_macAddr;
     logic [IP_ADDR_WIDTH-1:0]       m01_axis_rv_lookup_ipAddr;
     logic [UDP_PORT_WIDTH-1:0]      m01_axis_rv_lookup_udpPort;
 
@@ -81,13 +68,15 @@ module ethernet_tx_wrapper #(
     assign m02_axis_tdata[31:CONN_ID_WIDTH+2]   = 'b0;
 
     connection_manager #(
-        .WAYS(WAYS)
+        .WAYS(WAYS),
+        .BRAM_LATENCY(BRAM_LATENCY)
     ) connection_manager_unit (
         // Forward Lookup Channel
         .s00_axis_fw_lookup_aclk(),
         .s00_axis_fw_lookup_aresetn(),
         .s00_axis_fw_lookup_valid(),
         .s00_axis_fw_lookup_ipAddr(),
+        .s00_axis_fw_lookup_udpPort(),
         .s00_axis_fw_lookup_ready(),
 
         .m00_axis_fw_lookup_ready(),
@@ -105,7 +94,6 @@ module ethernet_tx_wrapper #(
         .m01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
         .m01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
         .m01_axis_rv_lookup_hit(m01_axis_rv_lookup_hit),
-        .m01_axis_rv_lookup_macAddr(m01_axis_rv_lookup_macAddr),
         .m01_axis_rv_lookup_ipAddr(m01_axis_rv_lookup_ipAddr),
         .m01_axis_rv_lookup_udpPort(m01_axis_rv_lookup_udpPort),
 
@@ -113,10 +101,9 @@ module ethernet_tx_wrapper #(
         .s02_axis_ctrl_aclk(s00_axis_aclk),
         .s02_axis_ctrl_aresetn(s00_axis_aresetn),
         .s02_axis_ctrl_valid(s02_axis_tvalid),
-        .s02_axis_ctrl_macAddr(s02_axis_tdata[47:0]),
-        .s02_axis_ctrl_ipAddr(s02_axis_tdata[95:64]),
-        .s02_axis_ctrl_udpPort(s02_axis_tdata[63:48]),
-        .s02_axis_ctrl_bind(s02_axis_tdata[96]),
+        .s02_axis_ctrl_ipAddr(s02_axis_tdata[31:0]),
+        .s02_axis_ctrl_udpPort(s02_axis_tdata[47:32]),
+        .s02_axis_ctrl_bind(s02_axis_tdata[48]),
         .s02_axis_ctrl_ready(s02_axis_tready),
 
         .m02_axis_ctrl_ready(m02_axis_tready),
@@ -128,21 +115,16 @@ module ethernet_tx_wrapper #(
 
     ethernet_tx #(
         .DATA_WIDTH(DATA_WIDTH),
-        .CONN_ID_WIDTH(CONN_ID_WIDTH),
-        .IP_UDP_DSCP(IP_UDP_DSCP),
-        .IP_UDP_ENC(IP_UDP_ENC),
-        .IP_UDP_IDEN(IP_UDP_IDEN),
-        .IP_UDP_FLAGS(IP_UDP_FLAGS),
-        .IP_UDP_FRAG_OFFSET(IP_UDP_FRAG_OFFSET),
-        .IP_UDP_TTL(IP_UDP_TTL)
+        .CONN_ID_WIDTH(CONN_ID_WIDTH)
     ) ethernet_tx_unit (
         .tx_axis_aclk(s00_axis_aclk),
         .tx_axis_aresetn(s00_axis_aresetn),
         .tx_engine_enable(tx_engine_enable),
 
-        .my_config_ipAddr(my_config_ipAddr),
-        .my_config_macAddr(my_config_macAddr),
-        .my_config_udpPort(my_config_udpPort),
+        .my_config_dst_macAddr(my_config_dst_macAddr),
+        .my_config_src_macAddr(my_config_src_macAddr),
+        .my_config_src_ipAddr(my_config_src_ipAddr),
+        .my_config_src_udpPort(my_config_src_udpPort),
 
         .cmac_tx_axis_tready(m00_axis_tready),
         .cmac_tx_axis_tdata(m00_axis_tdata),
@@ -162,7 +144,6 @@ module ethernet_tx_wrapper #(
         .s01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
         .s01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
         .s01_axis_rv_lookup_hit(m01_axis_rv_lookup_hit),
-        .s01_axis_rv_lookup_macAddr(m01_axis_rv_lookup_macAddr),
         .s01_axis_rv_lookup_ipAddr(m01_axis_rv_lookup_ipAddr),
         .s01_axis_rv_lookup_udpPort(m01_axis_rv_lookup_udpPort)
     );
