@@ -105,8 +105,8 @@
 
 module connection_manager #(
     // user-manager parameters
-    parameter int WAYS,                     // Associativity of hash table
-    parameter int BRAM_LATENCY,             // Latency of underlying RAM
+    parameter int WAYS = 4,                     // Associativity of hash table
+    parameter int BRAM_LATENCY = 5,             // Latency of underlying RAM
 
     // developer-managed parameters
     localparam int TAG_WIDTH        = IP_ADDR_WIDTH + UDP_PORT_WIDTH,

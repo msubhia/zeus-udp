@@ -13,8 +13,8 @@ parameter int ETHTYPE_ARP = 16'h0806;  // Address resolution protocol
 
 typedef struct packed {  // 14 bytes
   // preamble omitted
-  logic [MAC_ADDR_SIZE-1:0] dst_addr;
-  logic [MAC_ADDR_SIZE-1:0] src_addr;
+  logic [MAC_ADDR_SIZE-1:0] dst_mac;
+  logic [MAC_ADDR_SIZE-1:0] src_mac;
   logic [ETH_TYPE_SIZE-1:0] eth_type;
 } ethernet_header_t;
 
@@ -80,7 +80,7 @@ typedef struct packed {  // 8 bytes
 
 
 parameter HEADER_SIZE_BYTES = 14 + 20 + 8;  // ethernet + ip + udp 
-parameter HEADER_PAYLOAD_SIZE_BYTES = 512/8 - HEADER_SIZE_BYTES; // bytes available for payload in the first transaction
+parameter FIRST_TRANSACTION_PAYLOAD_SIZE = 512/8 - HEADER_SIZE_BYTES; // bytes available for payload in the first transaction
 
 
 // ethernet header struct
@@ -89,7 +89,7 @@ typedef struct packed {
   ipv4_header_t                           ip_hdr;
   udp_header_t                            udp_hdr;
   // add padding to make it 512
-  logic [HEADER_PAYLOAD_SIZE_BYTES*8-1:0] payload_start;
+  logic [FIRST_TRANSACTION_PAYLOAD_SIZE*8-1:0] payload_start;
 } header_t;
 
 

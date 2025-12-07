@@ -1,552 +1,384 @@
-`default_nettype none
+`default_nettype none `timescale 1ns / 1ps
 
 `include "zeus_rpc.svh"
 
-
+// ============================================================================
+// Ethernet RX IP
+// ============================================================================
 //
-// Processes Ethernet Packets
-// 
-// Checks if valid connection: our (dest) mac/ip/port and client mac/ip/port if a registered user
-// drops any packets from unregistered connections
-// drop non-valid checksums
+// Authors:          M.Subhi Abordan (msubhi_a@mit.edu)
+//                   Mena Filfil     (menaf@mit.edu)
+// Last Modified:    Dec 1, 2025
 //
-// ethernet header              = 14 bytes
-// ip header                    = 20 bytes
-// udp header                   = 8  bytes
-//-----------------------------
-// network layer total          = 42 bytes
-// 
-// total interface size = minimum packet size = 64 bytes.
-// so we could be recieving a packet each cycle, the pipeline should be good enough to not drop anything
-// the packet could be also divided over multiple transactions
-// 
-//
-// consumer recives an un-parsed RPC packet which consists of connection id and udp packet payload
-//
-//
-// out dest mac addr, ip addr, reciving port are setup by user through axi-lite and are constant 
-// connection manager handles book-keeping clients (mac, ip, port)-> (connection_id)
-// maybe we have a maximum number of connections
-//
-// to solve: invalidating connections while packets in fly
-//
-// this module does not stall even if the downstream module is busy. so ready signals are ignored.
-//
-//
-//
-// Suppose the wire sends:
-// Dest MAC:   11 22 33 44 55 66
-// Src MAC:    AA BB CC DD EE FF
-// Ethertype:  08 00
-
-
-// Then AXIS will present:
-
-// tdata[ 7:0]   = 0x11   // Dest MAC byte 0
-// tdata[15:8]   = 0x22
-// tdata[23:16]  = 0x33
-// tdata[31:24]  = 0x44
-// tdata[39:32]  = 0x55
-// tdata[47:40]  = 0x66
-
-// tdata[55:48]  = 0xAA   // Src MAC byte 0
-// tdata[63:56]  = 0xBB
-// tdata[71:64]  = 0xCC
-// tdata[79:72]  = 0xDD
-// tdata[87:80]  = 0xEE
-// tdata[95:88]  = 0xFF
-
-// tdata[103:96] = 0x08   // Ethertype byte 0
-// tdata[111:104]= 0x00
-
-// filter based on the src information (goes into the module)
-// filter based ont the dest information (coming from config given to the ethernet rx module)
-
-
-// TODOs: 
-// take out connection manager module instantiation to a higher level module
-// fix length check bug
-// add checksum support
-// add disable and passthrough signals
-// make connection id a premable for the first packet
+// ============================================================================
+// END
+// ============================================================================
 
 module ethernet_rx #(
-    parameter int DATA_WIDTH = 512,
-    parameter int KEEP_WIDTH = DATA_WIDTH / 8,
-    parameter int KEY_WIDTH = 32 + 16,
-    parameter int CONNECTION_ID_WIDTH = 32,
-    parameter int MAC_ADDR_SIZE = 48
+    parameter int DATA_WIDTH         = 512,
+    parameter int CONN_ID_WIDTH      = 18,
+    parameter int IP_UDP_DSCP        = 0,
+    parameter int IP_UDP_ENC         = 0,
+    parameter int IP_UDP_IDEN        = 0,
+    parameter int IP_UDP_FLAGS       = 0,
+    parameter int IP_UDP_FRAG_OFFSET = 0,
+    parameter int IP_UDP_TTL         = 64,
+
+    localparam int IP_ADDR_WIDTH = 32,
+    localparam int MAC_ADDR_WIDTH = 48,
+    localparam int UDP_PORT_WIDTH = 16,
+    localparam int CONNECTION_METADATA_WIDTH = IP_ADDR_WIDTH + MAC_ADDR_WIDTH + UDP_PORT_WIDTH + 8,
+    localparam int IP_PACKET_LENGTH_WIDTH = 16,
+    localparam int ETH_HEADER_BYTES = 14,
+    localparam int IP_HEADER_BYTES = 20,
+    localparam int UDP_HEADER_BYTES = 8,
+    localparam int TOTAL_HEADERS_BYTES = ETH_HEADER_BYTES + IP_HEADER_BYTES + UDP_HEADER_BYTES,
+    localparam int TOTAL_HEADERS_BITS = TOTAL_HEADERS_BYTES * 8
 ) (
     // ----------------------------------------------------------------
-    // CMAC RX INFERFACE
+    // CONTROL AND STATUS
     // ----------------------------------------------------------------
-    input logic aclk,
-    input logic aresetn,
-
-    //////// RX ////////
-    input  logic [DATA_WIDTH-1:0] s_axis_tdata,
-    input  logic [KEEP_WIDTH-1:0] s_axis_tkeep,
-    input  logic                  s_axis_tvalid,
-    output logic                  s_axis_tready,
-    input  logic                  s_axis_tlast,
-    input  logic [           0:0] s_axis_tuser,
+    input wire rx_axis_aclk,
+    input wire rx_axis_aresetn,
+    // input wire                          rx_engine_bypass,
+    // input wire                          rx_engine_enable,
 
     // ----------------------------------------------------------------
-    // OUTPUT
+    // CONNECTION CONFIGURATION
     // ----------------------------------------------------------------
-    output logic [DATA_WIDTH-1:0] m_axis_tdata,
-    output logic [CONNECTION_ID_WIDTH-1:0] m_axis_connection_id,
-    output logic [KEEP_WIDTH-1:0] m_axis_tkeep,
-    output logic                             m_axis_length_valid, // if tlast is high and this is low, some bytes were dropped either from source or in logic itself (i.e. UDP packet length != transmitted length)
-    output logic m_axis_tvalid,
-    input logic m_axis_tready,
-    output logic m_axis_tlast,
-    output logic [0:0] m_axis_tuser,
-
-
+    input wire [ IP_ADDR_WIDTH-1:0] my_config_dst_ipAddr,
+    input wire [MAC_ADDR_WIDTH-1:0] my_config_dst_macAddr,
+    input wire [UDP_PORT_WIDTH-1:0] my_config_dst_udpPort,
+    input wire [MAC_ADDR_WIDTH-1:0] my_config_src_macAddr,
 
     // ----------------------------------------------------------------
-    // CTRL REGISTERS FOR CONNECTION MANAGER 
+    // CMAC RX
     // ----------------------------------------------------------------
-    input  wire                  s02_axis_ctrl_valid,
-    input  wire  [KEY_WIDTH-1:0] s02_axis_ctrl_key,
-    input  wire                  s02_axis_ctrl_activate,
-    output logic                 s02_axis_ctrl_ready,
-
-    input  wire  m02_axis_ctrl_ready,  // assumes always 1
-    output logic m02_axis_ctrl_valid,
-    output logic m02_axis_ctrl_ack,
-    output logic m02_axis_ctrl_full,
+    output logic                    cmac_rx_axis_tready,
+    input  wire  [  DATA_WIDTH-1:0] cmac_rx_axis_tdata,
+    input  wire  [DATA_WIDTH/8-1:0] cmac_rx_axis_tkeep,
+    input  wire                     cmac_rx_axis_tvalid,
+    input  wire                     cmac_rx_axis_tlast,
 
     // ----------------------------------------------------------------
-    // DEST CONFIG
+    // USER OUTPUT
     // ----------------------------------------------------------------
-    input connection_config_t my_config,
+    input  wire                     udp_rx_axis_tready,
+    output logic [  DATA_WIDTH-1:0] udp_rx_axis_tdata,
+    output logic [DATA_WIDTH/8-1:0] udp_rx_axis_tkeep,
+    output logic                    udp_rx_axis_tvalid,
+    output logic                    udp_rx_axis_tlast,
 
     // ----------------------------------------------------------------
-    // DEBUG SIGNALS
+    // CONNECTION MANAGER ID LOOKUP
     // ----------------------------------------------------------------
-    input logic dbypass,
-    input logic ddisable
+    input  wire                       m01_axis_fw_lookup_ready,
+    output logic                      m01_axis_fw_lookup_valid,
+    output logic [ IP_ADDR_WIDTH-1:0] m01_axis_fw_lookup_ipAddr,
+    output logic [UDP_PORT_WIDTH-1:0] m01_axis_fw_lookup_udpPort,
+
+    output logic                     s01_axis_fw_lookup_ready,
+    input  wire                      s01_axis_fw_lookup_valid,
+    input  wire                      s01_axis_fw_lookup_hit,
+    input  wire  [CONN_ID_WIDTH-1:0] s01_axis_fw_lookup_connectionId
 );
 
-  logic [MAC_ADDR_SIZE-1:0] my_mac_addr;
-  logic [             31:0] my_ip_addr;
-  logic [             15:0] my_port;
-  assign my_mac_addr = my_config.mac_addr;
-  assign my_ip_addr = my_config.ip_addr;
-  assign my_port = my_config.port;
+  // ----------------------------------------------------------------------------------------------
+  // FIFOs
+  // ----------------------------------------------------------------------------------------------
 
+  // As packets are entering we count their length on the fly and forward them to a fifo, once an
+  // entire packet has entered we send its length in another fifo a long with the fetched connection
+  // meta data
+  // a consuming fsm on the other side of the fifo starts when all relavent metadata of a packet in
+  // the fifo arrives, and it constructs the header and prepend it
+  logic                           payload_fifo_tready;
+  logic                           payload_fifo_tlast;
+  logic                           payload_fifo_tvalid;
+  logic [       DATA_WIDTH  -1:0] payload_fifo_tdata;
+  logic [       DATA_WIDTH/8-1:0] payload_fifo_tkeep;
 
-  // in a single cycle:
-  // 1- my mac == dest mac
-  // 2- eth type is ip
-  // 3- ip version is not 4
-  // 4- my ip = dest ip
-  // 5- ip protocol is udp
-  // 6- my port == dest port
+  logic                           connection_fifo_tready;
+  logic                           connection_fifo_tlast;
+  logic                           connection_fifo_tvalid;
+  logic [(CONN_ID_WIDTH-1 + 6):0] connection_fifo_tdata;
 
-  // 2-3 cycles:
-  // 7- ip hdr_checksum is valid
-  // 9- src ip is registered
+  logic                           length_check_fifo_out_tready;
+  logic                           length_check_fifo_out_tlast;
+  logic                           length_check_fifo_out_tvalid;
+  logic [                    7:0] length_check_fifo_out_tdata;
 
-  // until the very end:
-  // 11- ip length matches until the tlast
-  // 12- udp lenfth matched until the tlast
+  logic                           length_check_fifo_tready;
+  logic                           length_check_fifo_tvalid;
+  logic                           length_check_fifo_tdata;
 
-  typedef enum {
-    IDLE,
-    ACCUMULATING_PAYLOAD
-  } state_t;
+  fifo_axis_wrapper #(
+      .FIFO_DEPTH (64),
+      .TDATA_WIDTH(DATA_WIDTH)
+  ) packet_transaction_fifo (
+      // input from CMAC RX
+      .s_aclk(rx_axis_aclk),
+      .s_aresetn(rx_axis_aresetn),
+      .s_axis_tdata(cmac_rx_axis_tdata),
+      .s_axis_tkeep(cmac_rx_axis_tkeep),
+      .s_axis_tlast(cmac_rx_axis_tlast),
+      .s_axis_tvalid(cmac_rx_axis_tvalid  /*& tx_engine_enable & (!tx_engine_bypass)*/),
+      .s_axis_tready(cmac_rx_axis_tready),  // should always be ready
 
-
-  state_t state, prev_state;
-  logic prev_tlast, is_packet_beginning;
-
-  logic payload_valid, ppayload_valid, payload_tlast, ppayload_tlast;
-  logic [KEEP_WIDTH-1:0] payload_tkeep, ppayload_tkeep;
-
-  header_t header, current_header;
-  logic [KEEP_WIDTH-1:0][7:0] payload, ppayload, s_axis_tdata_bytes;
-  // should always be true
-  logic connection_valid;
-  logic [31:0] connection_id, connection_id_reg;
-  logic connection_hit, connection_hit_reg;
-  logic [15:0] udp_payload_length, udp_payload_length_reg;
-  logic [15:0] udp_payload_counter, udp_payload_counter_reg;
-  logic udp_payload_regs_valid;
-
-  logic connection_id_lookup_valid;
-
-  connection_manager #(
-      .KEY_WIDTH(32 + 16)  // ip addr + port
-  ) conn_mgr (
-      .clk(aclk),
-      .rst(!aresetn),
-      .s00_axis_fw_lookup_valid(connection_id_lookup_valid),
-      .s00_axis_fw_lookup_ready(),  // ignored
-      .s00_axis_fw_lookup_key({header.ip_hdr.src_ip, header.udp_hdr.src_port}),
-
-      .m00_axis_fw_lookup_ready(1),
-      .m00_axis_fw_lookup_valid(connection_valid),
-      .m00_axis_fw_lookup_resp (connection_id_reg),
-      .m00_axis_fw_lookup_hit  (connection_hit_reg),
-
-      .s02_axis_ctrl_valid(s02_axis_ctrl_valid),
-      .s02_axis_ctrl_key(s02_axis_ctrl_key),
-      .s02_axis_ctrl_activate(s02_axis_ctrl_activate),
-      .s02_axis_ctrl_ready(s02_axis_ctrl_ready),
-
-      .m02_axis_ctrl_ready(m02_axis_ctrl_ready),
-      .m02_axis_ctrl_valid(m02_axis_ctrl_valid),
-      .m02_axis_ctrl_ack  (m02_axis_ctrl_ack),
-      .m02_axis_ctrl_full (m02_axis_ctrl_full)
+      // output to payload processing signals
+      .m_aclk(rx_axis_aclk),
+      .m_axis_tready(payload_fifo_tready),
+      .m_axis_tlast(payload_fifo_tlast),
+      .m_axis_tvalid(payload_fifo_tvalid),
+      .m_axis_tdata(payload_fifo_tdata),
+      .m_axis_tkeep(payload_fifo_tkeep)
   );
 
-  // only update on valid (would maintain previous value as long as we're not in the first cycle processing a header)
-  always_ff @(posedge aclk) begin
-    if (!aresetn) begin
-      connection_id  <= '0;
-      connection_hit <= 1'b0;
-    end else if (connection_valid) begin
-      connection_id  <= connection_id_reg;
-      connection_hit <= connection_hit_reg;
+  fifo_axis_wrapper #(
+      .FIFO_DEPTH (64),
+      .TDATA_WIDTH(CONN_ID_WIDTH + 1 + 5)
+  ) connection_id_fifo (
+      // connection ids coming from connection manager
+      .s_aclk(rx_axis_aclk),
+      .s_aresetn(rx_axis_aresetn),
+      .s_axis_tdata({5'b0, s01_axis_fw_lookup_hit, s01_axis_fw_lookup_connectionId}),
+      .s_axis_tkeep({((CONN_ID_WIDTH + 6) / 8) {1'b1}}),
+      .s_axis_tlast(1'b1),
+      .s_axis_tvalid(s01_axis_fw_lookup_valid  /*& tx_engine_enable & (!tx_engine_bypass)*/),
+      .s_axis_tready(s01_axis_fw_lookup_ready),  // should always be ready
+
+      // connection ids going to the payload processor
+      .m_aclk(rx_axis_aclk),
+      .m_axis_tready(connection_fifo_tready),
+      .m_axis_tlast(connection_fifo_tlast),
+      .m_axis_tvalid(connection_fifo_tvalid),
+      .m_axis_tdata(connection_fifo_tdata),
+      .m_axis_tkeep()
+  );
+
+  fifo_axis_wrapper #(
+      .FIFO_DEPTH (64),
+      .TDATA_WIDTH(8)
+  ) length_check_fifo (
+      // length checking on running counter of packet lengths
+      .s_aclk(rx_axis_aclk),
+      .s_aresetn(rx_axis_aresetn),
+      .s_axis_tdata({7'b0, length_check_fifo_tdata}),
+      .s_axis_tkeep(1'b1),
+      .s_axis_tlast(1'b1),
+      .s_axis_tvalid(length_check_fifo_tvalid  /*& tx_engine_enable & (!tx_engine_bypass)*/),
+      .s_axis_tready(length_check_fifo_tready),  // should always be ready
+
+      // length check output to payload processor
+      .m_aclk(rx_axis_aclk),
+      .m_axis_tready(length_check_fifo_out_tready),
+      .m_axis_tlast(length_check_fifo_out_tlast),
+      .m_axis_tvalid(length_check_fifo_out_tvalid),
+      .m_axis_tdata(length_check_fifo_out_tdata),
+      .m_axis_tkeep()
+  );
+
+  // ----------------------------------------------------------------------------------------------
+  // Transaction Sequencing Metadata
+  // ----------------------------------------------------------------------------------------------
+  logic is_first_transaction;
+
+  always_ff @(posedge rx_axis_aclk) begin
+    if (!rx_axis_aresetn) is_first_transaction <= 1;
+    else if (cmac_rx_axis_tvalid && udp_rx_axis_tready) begin
+      if (cmac_rx_axis_tlast) is_first_transaction <= 1;
+      else is_first_transaction <= 0;
     end
   end
 
-  assign s_axis_tdata_bytes = s_axis_tdata;
-  assign s_axis_tready = 1'b1;
-  assign header = header_t'(s_axis_tdata[DATA_WIDTH-1:0]);
+  // ----------------------------------------------------------------------------------------------
+  // Header Parsing and Validation
+  // ----------------------------------------------------------------------------------------------
+  header_t full_header;
+  // little endian to big endian conversion to correctly parse packet headers from CMAC in network order
+  logic [DATA_WIDTH-1:0] cmac_rx_axis_tdata_be;
+  logic
+      header_valid,
+      dst_mac_valid,
+      src_mac_valid,
+      dst_ip_valid,
+      dst_port_valid,
+      eth_type_valid,
+      ip_proto_valid,
+      ip_version_valid;
+  generate
+    // split into bytes and reverse order byte
+    for (genvar i = 0; i < DATA_WIDTH / 8; i++) begin : be_gen
+      assign cmac_rx_axis_tdata_be[i*8+:8] = cmac_rx_axis_tdata[(DATA_WIDTH-8)-i*8+:8];
+    end
+  endgenerate
 
-  assign is_packet_beginning = s_axis_tvalid && prev_tlast;
+  assign full_header = cmac_rx_axis_tdata_be;
 
+  logic [15:0] udp_rx_axis_length;
+  assign udp_rx_axis_length = full_header.udp_hdr.length - (UDP_HEADER_BYTES);
 
-  // pipelined signals:
-  // connection id (automatically pipelined through the register above)
-  // connection hit (automatically pipelined through the register above)
-  // udp payload length
-  // payload register data
-  // payload output tkeep 
-
-  logic payload_length_valid, payload_tlast_2, payload_length_valid_2, ppayload_length_valid;
-
-  //   assign payload_length_valid = (udp_payload_counter == udp_payload_length);
-  pipeline #(
-      .DATA_WIDTH(1 + 1 + 1 + 512 + KEEP_WIDTH),
-      .STAGES(3)
-  ) payload_pipeline (
-      .clk_in(aclk),
-      .data({payload_valid, payload, payload_tkeep}),
-      .data_out({ppayload_valid, ppayload, m_axis_tkeep})
-  );
-
-  pipeline #(
-      .DATA_WIDTH(2),
-      .STAGES(2)
-  ) payload_length_valid_pipeline (
-      .clk_in(aclk),
-      .data({payload_length_valid_2, payload_tlast_2}),
-      .data_out({ppayload_length_valid, ppayload_tlast})
-  );
-
-
-  // for delayed update conditions
-  always_ff @(posedge aclk) begin
-    // payload_length_valid_2 <= (prev_transaction && !transaction) ? udp_payload_counter == udp_payload_length : payload_length_valid;
-    // payload_tlast_2 <= payload_tlast;
-    payload_length_valid_2 <= payload_length_valid_r;
-    payload_tlast_2 <= payload_tlast;
-  end
-
-
-  // output channel assignments
-  assign m_axis_tdata = ppayload;
-  assign m_axis_connection_id = connection_id;
-  assign m_axis_tvalid = ppayload_valid && connection_hit;
-  assign m_axis_tlast = ppayload_tlast;
-  assign m_axis_length_valid = ppayload_length_valid;
-
-
-
-  // tkeep checks
-  // header bytes = 52 bytes
-  logic tkeep_prefix_ok;
-  logic tkeep_suffix_ok;
-
-  assign tkeep_prefix_ok = s_axis_tkeep[512/8-1: 512/8 -  HEADER_PAYLOAD_SIZE_BYTES] == {({HEADER_PAYLOAD_SIZE_BYTES{1'b1}})}; // want all header bytes to be present
-  assign tkeep_suffix_ok = (s_axis_tkeep[KEEP_WIDTH-1: 52] != {KEEP_WIDTH-52{1'b0}}); // want at least one byte in the payload
-
-
-  logic [47:0] dst_addr;
+  logic [47:0] dst_mac;
+  logic [47:0] src_mac;
   logic [15:0] eth_type;
   logic [ 3:0] ip_version;
+  logic [ 3:0] ip_header_length;
+  logic [31:0] src_ip;
   logic [31:0] dst_ip;
-  logic [ 7:0] ip_protocol;
-  logic [15:0] dst_port;
+  logic [15:0] udp_src_port;
+  logic [15:0] udp_dst_port;
+  logic [ 7:0] ip_proto;
 
-  assign dst_addr = header.eth_hdr.dst_addr;
-  assign eth_type = header.eth_hdr.eth_type;
-  assign ip_version = header.ip_hdr.version;
-  assign dst_ip = header.ip_hdr.dst_ip;
-  assign ip_protocol = header.ip_hdr.protocol;
-  assign dst_port = header.udp_hdr.dst_port;
+  assign dst_mac = full_header.eth_hdr.dst_mac;
+  assign src_mac = full_header.eth_hdr.src_mac;
+  assign eth_type = full_header.eth_hdr.eth_type;
+  assign ip_version = full_header.ip_hdr.version;
+  assign ip_header_length = full_header.ip_hdr.header_length;
+  assign src_ip = full_header.ip_hdr.src_ip;
+  assign dst_ip = full_header.ip_hdr.dst_ip;
+  assign ip_proto = full_header.ip_hdr.protocol;
+  assign udp_src_port = full_header.udp_hdr.src_port;
+  assign udp_dst_port = full_header.udp_hdr.dst_port;
 
-  // header checks
-  logic
-      mac_ok,
-      eth_ok,
-      ipv4_ok,
-      dst_ip_ok,
-      proto_ok,
-      port_ok,
-      first_cycle_header_valid,
-      first_cycle_payload_valid_next,
-      single_cycle_udp_payload_len_ok;
-  assign mac_ok = (dst_addr == my_mac_addr);
-  assign eth_ok = (header.eth_hdr.eth_type == 16'h0800);
-  assign ipv4_ok = (header.ip_hdr.version == 4);
-  assign dst_ip_ok = (header.ip_hdr.dst_ip == my_ip_addr);
-  assign proto_ok = (header.ip_hdr.protocol == IPPROTO_UDP);
-  assign port_ok = (header.udp_hdr.dst_port == my_port);
+  // ----------------------------------------------------------------------------------------------
 
-  // -------------------------------------------
-  // Combine everything into a single valid flag
-  // -------------------------------------------
+  assign dst_mac_valid = (full_header.eth_hdr.dst_mac == my_config_dst_macAddr);
+  assign src_mac_valid = (full_header.eth_hdr.src_mac == my_config_src_macAddr);
+  assign eth_type_valid = (full_header.eth_hdr.eth_type == 16'h0800);  // IPv4
+  assign ip_proto_valid = (full_header.ip_hdr.protocol == 8'h11);  // UDP
+  assign dst_ip_valid = (full_header.ip_hdr.dst_ip == my_config_dst_ipAddr);
+  assign dst_port_valid = (full_header.udp_hdr.dst_port == my_config_dst_udpPort);
+  assign ip_version_valid = (full_header.ip_hdr.version == IP_VERSION_IPV4);
+  assign header_valid = dst_mac_valid & src_mac_valid & eth_type_valid & ip_proto_valid & dst_ip_valid & dst_port_valid & ip_version_valid;
 
-  assign first_cycle_header_valid =
-	mac_ok & 
-    tkeep_prefix_ok &
-    tkeep_suffix_ok &
-    mac_ok &
-    eth_ok &
-    ipv4_ok &
-    dst_ip_ok &
-    proto_ok &
-    port_ok;
+  // ----------------------------------------------------------------------------------------------
+  // Length Sum and Expected Capture and Check
+  // ----------------------------------------------------------------------------------------------
+  // holds a valid value from the first transaction through the end of the packet (including the tlast cycle)
+  logic [IP_PACKET_LENGTH_WIDTH-1:0] expected_udp_length;
+  logic [IP_PACKET_LENGTH_WIDTH-1:0] expected_udp_length_post;
+  logic                              expected_udp_length_post_valid;
+  logic [IP_PACKET_LENGTH_WIDTH-1:0] current_udp_length;
+  logic [IP_PACKET_LENGTH_WIDTH-1:0] current_udp_length_post;
+  logic                              current_udp_length_post_valid;
 
-  localparam UDP_HDR_BYTES = 8;
-
-
-  assign single_cycle_udp_payload_len_ok = header.udp_hdr.length - UDP_HDR_BYTES == $countones(
-      tkeep_leftover
-  );
-
-
-  logic [HEADER_PAYLOAD_SIZE_BYTES-1:0][7:0] payload_leftover;
-  logic [HEADER_PAYLOAD_SIZE_BYTES*8-1:0] payload_leftover_flat;
-  logic payload_leftover_valid;
-  assign payload_leftover_flat = header.payload_start;
-  logic [HEADER_PAYLOAD_SIZE_BYTES-1:0] tkeep_leftover;
-  logic [HEADER_PAYLOAD_SIZE_BYTES-1:0] tkeep_leftover_flat;
-  assign tkeep_leftover_flat = s_axis_tkeep[HEADER_PAYLOAD_SIZE_BYTES-1:0];
-
-  logic [15:0] payload_leftover_byte_count;
-  assign payload_leftover_byte_count = $countones(tkeep_leftover);
-  logic [15:0] total_active_bytes;
-  assign total_active_bytes = $countones(s_axis_tkeep);
-
-
-  logic transaction, prev_transaction;
-  assign transaction = s_axis_tvalid && s_axis_tready;
-
-  logic fast_length_check, length_check;
-  logic [15:0] fast_udp_length;
-  assign fast_udp_length = udp_payload_counter + total_active_bytes;
-
-  assign fast_length_check = (fast_udp_length) == udp_payload_length;
-  assign payload_length_valid = udp_payload_counter == udp_payload_length;
-
-  logic payload_length_valid_r;
-
-  logic [15:0] debug_packet_count;
-
-  always_ff @(posedge aclk) begin
-    if (!aresetn) begin
-      state <= IDLE;
-      prev_tlast <= 1'b1;
-      connection_id_lookup_valid <= 0;
-      tkeep_leftover <= '0;
-      payload_leftover <= '0;
-      payload_leftover_valid <= 1'b0;
-      payload_tlast <= 0;
-      payload_valid <= 0;
-      payload_tkeep <= '0;
-      payload <= 0;
-      udp_payload_length <= 16'b0;
-      udp_payload_counter <= 16'b0;
-      payload_length_valid_r <= 1'b0;
-      debug_packet_count <= 16'b0;
+  always_ff @(posedge rx_axis_aclk) begin
+    if (!rx_axis_aresetn) begin
+      expected_udp_length            <= 'b0;
+      expected_udp_length_post       <= 'b0;
+      expected_udp_length_post_valid <= 1'b0;
     end else begin
-      if (transaction) begin
-        debug_packet_count <= debug_packet_count + (is_packet_beginning ? 1 : 0);
-      end
-
-      if (is_packet_beginning && transaction && prev_tlast) begin
-        payload_length_valid_r <= udp_payload_counter + total_active_bytes == udp_payload_length;
+      if (cmac_rx_axis_tvalid && cmac_rx_axis_tready) begin
+        if (is_first_transaction) begin
+          if (cmac_rx_axis_tlast) begin
+            expected_udp_length            <= 'b0;
+            expected_udp_length_post       <= udp_rx_axis_length;
+            expected_udp_length_post_valid <= 1'b1;
+          end else begin
+            expected_udp_length            <= udp_rx_axis_length;
+            expected_udp_length_post       <= 'b0;
+            expected_udp_length_post_valid <= 1'b0;
+          end
+        end else if (cmac_rx_axis_tlast) begin
+          expected_udp_length_post       <= expected_udp_length;
+          expected_udp_length_post_valid <= 1'b1;
+        end else begin
+          expected_udp_length_post       <= 'b0;
+          expected_udp_length_post_valid <= 1'b0;
+        end
       end else begin
-        payload_length_valid_r <= payload_length_valid;
+        expected_udp_length_post_valid <= 1'b0;
       end
-
-      prev_transaction <= transaction;
-
-      if (transaction) begin
-        prev_tlast <= s_axis_tlast;
-      end
-
-      case (state)
-        IDLE: begin
-          if (transaction && is_packet_beginning && first_cycle_header_valid) begin
-            // check the validity of the header before moving to accumulating
-
-
-            // if the header is initially valid
-            // load relevant header information and initiate a connection id lookup
-
-            // if valid, start looking up the connection id
-            connection_id_lookup_valid <= 1'b1;
-
-            // if accumulating, save the expected and current payload count from header								 
-            udp_payload_length <= header.udp_hdr.length - UDP_HDR_BYTES;
-            udp_payload_counter <= total_active_bytes - HEADER_SIZE_BYTES;
-
-            state <= ACCUMULATING_PAYLOAD;
-
-            for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-              payload_leftover[i] <= payload_leftover_flat[(i+1)*8-1-:8];
-              tkeep_leftover[i]   <= tkeep_leftover_flat[i];
-            end
-            payload_leftover_valid <= 1'b1;
-
-            if (payload_leftover_valid) begin
-              // leftover always goes in the first bytes of the actual payload
-              for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload[i] <= payload_leftover[i];
-                payload_tkeep[i] <= tkeep_leftover[i];
-              end
-              for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
-              end
-              payload_valid <= 1'b1;
-              payload_tlast <= prev_tlast;
-            end else begin
-              payload_valid <= 0;
-            end
-          end else begin
-            if (payload_leftover_valid) begin
-              // leftover always goes in the first bytes of the actual payload
-              for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload[i] <= payload_leftover[i];
-                payload_tkeep[i] <= tkeep_leftover[i];
-              end
-              for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
-              end
-              payload_valid <= 1'b1;
-              payload_tlast <= prev_tlast;
-              payload_leftover_valid <= 1'b0;
-            end else begin
-              payload_valid <= 0;
-              payload_tlast <= 0;
-            end
-          end
-          // otherwise we stay in idle 
-        end
-
-        ACCUMULATING_PAYLOAD: begin
-          connection_id_lookup_valid <= 1'b0;
-          if (transaction) begin
-            if (is_packet_beginning && first_cycle_header_valid) begin
-              // update the leftover registers
-              for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload_leftover[i] <= payload_leftover_flat[(i+1)*8-1-:8];
-                tkeep_leftover[i]   <= tkeep_leftover_flat[i];
-              end
-              payload_leftover_valid <= 1'b1;
-
-              udp_payload_length <= header.udp_hdr.length - UDP_HDR_BYTES;
-              udp_payload_counter <= total_active_bytes - HEADER_SIZE_BYTES;
-
-              if (payload_leftover_valid) begin
-                // start a new packet while still having leftover from previous one
-                for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                  payload[i] <= payload_leftover[i];
-                  payload_tkeep[i] <= tkeep_leftover[i];
-                end
-                for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                  payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
-                end
-                payload_valid <= 1'b1;
-                payload_tlast <= prev_tlast;
-              end
-
-            end else begin
-              if (payload_leftover_valid) begin
-                // combine with leftover as msb and fill the rest from the current transaction
-
-                for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                  payload[KEEP_WIDTH-1-i] <= payload_leftover[HEADER_PAYLOAD_SIZE_BYTES-1-i];
-                  payload_tkeep[KEEP_WIDTH-1-i] <= tkeep_leftover[HEADER_PAYLOAD_SIZE_BYTES-1-i];
-                end
-
-                for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                  payload[KEEP_WIDTH-1 - (HEADER_PAYLOAD_SIZE_BYTES+i)] <= s_axis_tdata_bytes[KEEP_WIDTH-1-i];
-                  payload_tkeep[KEEP_WIDTH-1 - (HEADER_PAYLOAD_SIZE_BYTES+i)] <= s_axis_tkeep[KEEP_WIDTH-1-i];
-                end
-
-                for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                  payload_leftover[i] <= payload_leftover_flat[(i+1)*8-1-:8];
-                  tkeep_leftover[i]   <= tkeep_leftover_flat[i];
-                end
-
-                payload_tlast <= prev_tlast;
-
-                // udp payload counter update
-                udp_payload_counter <= udp_payload_counter + total_active_bytes;
-
-              end else begin
-                // passthrough behavior
-                for (int i = 0; i < KEEP_WIDTH; i++) begin
-                  payload[i] <= s_axis_tdata_bytes[i];
-                  payload_tkeep[i] <= s_axis_tkeep[i];
-                end
-
-                payload_tlast <= s_axis_tlast;
-              end
-              // udp payload counter update
-              udp_payload_counter <= udp_payload_counter + total_active_bytes;
-              payload_valid <= 1'b1;
-
-              if (s_axis_tlast) begin
-                state <= IDLE;
-              end
-            end
-
-          end else begin
-            // flush the payload leftover if no new data
-            if (payload_leftover_valid) begin
-              for (int i = 0; i < HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload[i] <= payload_leftover[i];
-                payload_tkeep[i] <= tkeep_leftover[i];
-              end
-
-              for (int i = 0; i < KEEP_WIDTH - HEADER_PAYLOAD_SIZE_BYTES; i++) begin
-                payload_tkeep[HEADER_PAYLOAD_SIZE_BYTES+i] <= 0;
-              end
-
-              payload_valid <= 1'b1;
-              payload_tlast <= prev_tlast;
-              // udp payload counter does not change since 
-              // we're not getting any new data, so we can flush the leftover
-              payload_leftover_valid <= 1'b0;
-            end else begin
-              payload_valid <= 0;
-              payload_tlast <= 0;
-            end
-          end
-        end
-      endcase
     end
   end
+
+  always_ff @(posedge rx_axis_aclk) begin
+
+    if (!rx_axis_aresetn) begin
+      current_udp_length            <= 'b0;
+      current_udp_length_post       <= 'b0;
+      current_udp_length_post_valid <= 1'b0;
+    end else begin
+
+      if (cmac_rx_axis_tvalid && cmac_rx_axis_tready) begin
+        if (cmac_rx_axis_tlast) begin
+          current_udp_length <= 'b0;
+          current_udp_length_post <= current_udp_length + $countones(
+              cmac_rx_axis_tkeep
+          ) - (TOTAL_HEADERS_BYTES);
+          current_udp_length_post_valid <= 1'b1;
+        end else begin
+          current_udp_length            <= current_udp_length + $countones(cmac_rx_axis_tkeep);
+          current_udp_length_post       <= 'b0;
+          current_udp_length_post_valid <= 1'b0;
+        end
+      end else begin
+        current_udp_length_post_valid <= 1'b0;
+      end
+
+    end
+  end
+
+  logic length_check_passed;
+  assign length_check_passed = (expected_udp_length_post_valid && current_udp_length_post_valid) ?
+							  (expected_udp_length_post == current_udp_length_post) : 1'b0;
+  assign length_check_fifo_tdata = length_check_passed;
+  assign length_check_fifo_tvalid = expected_udp_length_post_valid && current_udp_length_post_valid;
+
+  // ----------------------------------------------------------------------------------------------
+  // ConnectionId Fetch
+  // ----------------------------------------------------------------------------------------------
+
+  assign m01_axis_fw_lookup_valid = cmac_rx_axis_tvalid && cmac_rx_axis_tready && is_first_transaction && header_valid;
+  assign m01_axis_fw_lookup_ipAddr = full_header.ip_hdr.src_ip;
+  assign m01_axis_fw_lookup_udpPort = full_header.udp_hdr.src_port;
+
+
+  // ==============================================================================================
+  // Payload Generation
+  // ==============================================================================================
+
+  logic                    to_checksum_tx_axis_tready;
+  logic [  DATA_WIDTH-1:0] to_checksum_tx_axis_tdata;
+  logic [DATA_WIDTH/8-1:0] to_checksum_tx_axis_tkeep;
+  logic                    to_checksum_tx_axis_tvalid;
+  logic                    to_checksum_tx_axis_tlast;
+
+  rx_payload_constructor #(
+      .DATA_WIDTH(DATA_WIDTH),
+      .CONN_ID_WIDTH(CONN_ID_WIDTH),
+      .IP_UDP_DSCP(IP_UDP_DSCP),
+      .IP_UDP_ENC(IP_UDP_ENC),
+      .IP_UDP_IDEN(IP_UDP_IDEN),
+      .IP_UDP_FLAGS(IP_UDP_FLAGS),
+      .IP_UDP_FRAG_OFFSET(IP_UDP_FRAG_OFFSET),
+      .IP_UDP_TTL(IP_UDP_TTL)
+  ) rx_payload_constructor_unit (
+      .rx_axis_aclk(rx_axis_aclk),
+      .rx_axis_aresetn(rx_axis_aresetn),
+
+      .payload_fifo_tlast (payload_fifo_tlast),
+      .payload_fifo_tvalid(payload_fifo_tvalid),
+      .payload_fifo_tdata (payload_fifo_tdata),
+      .payload_fifo_tkeep (payload_fifo_tkeep),
+      .payload_fifo_tready(payload_fifo_tready),
+
+      .connection_fifo_tlast (connection_fifo_tlast),
+      .connection_fifo_tvalid(connection_fifo_tvalid),
+      .connection_fifo_tdata (connection_fifo_tdata),
+      .connection_fifo_tready(connection_fifo_tready),
+
+      .length_check_fifo_out_tlast (length_check_fifo_out_tlast),
+      .length_check_fifo_out_tvalid(length_check_fifo_out_tvalid),
+      .length_check_fifo_out_tdata (length_check_fifo_out_tdata),
+      .length_check_fifo_out_tready(length_check_fifo_out_tready),
+
+      .payload_out_tready(udp_rx_axis_tready),
+      .payload_out_tdata (udp_rx_axis_tdata),
+      .payload_out_tkeep (udp_rx_axis_tkeep),
+      .payload_out_tvalid(udp_rx_axis_tvalid),
+      .payload_out_tlast (udp_rx_axis_tlast)
+  );
 
 endmodule
 `default_nettype wire
