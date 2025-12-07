@@ -3,6 +3,42 @@
 
 `include "udp_engine_100g.svh"
 
+function automatic logic [15:0] hash_fun_ip_port (
+    input logic [31:0] ip,
+    input logic [15:0] port
+);
+    logic [47:0] key;
+    logic [31:0] mix;
+
+    key = {ip, port};  // 48 bits
+
+    // Fold down to 32 bits with some rotation-ish mixing
+    mix = key[31:0] ^ {key[47:32], key[15:0]};
+
+    // Multiplicative hash (odd constant, like Knuth's)
+    mix = mix * 32'h9E3779B1;
+
+    // Take upper 16 bits (usually better than lower)
+    return mix[31:16];
+endfunction
+
+
+function automatic logic [15:0] swap_bytes_2(input logic [15:0] din);
+    swap_bytes_2 = {din[7:0], din[15:8]};
+endfunction
+
+function automatic logic [31:0] swap_bytes_4(input logic [31:0] din);
+    for (int i = 0; i < 4; i++) begin
+        swap_bytes_4[i*8 +: 8] = din[(4-1-i)*8 +: 8];
+    end
+endfunction
+
+function automatic logic [47:0] swap_bytes_6(input logic [47:0] din);
+    for (int i = 0; i < 6; i++) begin
+        swap_bytes_6[i*8 +: 8] = din[(6-1-i)*8 +: 8];
+    end
+endfunction
+
 // ============================================================================
 // UDP Engine 100G IP
 // ============================================================================
@@ -21,7 +57,7 @@ module udp_engine_100g #(
 
     parameter int DATA_WIDTH            = 512,
     parameter int C_S_AXI_DATA_WIDTH    = 32,
-	parameter int C_S_AXI_ADDR_WIDTH    = 7
+	parameter int C_S_AXI_ADDR_WIDTH    = 7,
     parameter int CONN_ID_WIDTH         = HASH_WIDTH + $clog2(WAYS)
 ) (
     // ----------------------------------------------------------------
@@ -225,8 +261,8 @@ module udp_engine_100g #(
         .src_clk(),
         .src_in(
             {csr_udp_engine_100g__myConfig_ipAddr,
-            {csr_udp_engine_100g__myConfig_macAddr_upper[15:0], csr_udp_engine_100g__connManager_wr_macAddr_lower},
-            {csr_udp_engine_100g__myConfig_macAddr_upper_dst[15:0], csr_udp_engine_100g__connManager_wr_macAddr_lower_dst},
+            {csr_udp_engine_100g__myConfig_macAddr_upper[15:0], csr_udp_engine_100g__myConfig_macAddr_lower},
+            {csr_udp_engine_100g__myConfig_macAddr_upper_dst[15:0], csr_udp_engine_100g__myConfig_macAddr_lower_dst},
             csr_udp_engine_100g__myConfig_udpPort[15:0]})
     );
 
@@ -245,8 +281,8 @@ module udp_engine_100g #(
         .src_clk(),
         .src_in(
             {csr_udp_engine_100g__myConfig_ipAddr,
-            {csr_udp_engine_100g__myConfig_macAddr_upper[15:0], csr_udp_engine_100g__connManager_wr_macAddr_lower},
-            {csr_udp_engine_100g__myConfig_macAddr_upper_dst[15:0], csr_udp_engine_100g__connManager_wr_macAddr_lower_dst},
+            {csr_udp_engine_100g__myConfig_macAddr_upper[15:0], csr_udp_engine_100g__myConfig_macAddr_lower},
+            {csr_udp_engine_100g__myConfig_macAddr_upper_dst[15:0], csr_udp_engine_100g__myConfig_macAddr_lower_dst},
             csr_udp_engine_100g__myConfig_udpPort[15:0]})
     );
 

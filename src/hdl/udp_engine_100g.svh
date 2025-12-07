@@ -1,7 +1,6 @@
 `ifndef UDP_ENGINE_100G_HEADER
 `define UDP_ENGINE_100G_HEADER
 
-
 // ==========================================================================================
 // Networking Constants
 // ==========================================================================================
@@ -42,44 +41,4 @@ parameter IP_UDP_TTL                = 64;
 parameter CONNECTION_META_WIDTH     = IP_ADDR_WIDTH + UDP_PORT_WIDTH + 8;
 parameter HASH_WIDTH                = 16;
 
-function automatic logic [15:0] hash_fun_ip_port (
-    input logic [31:0] ip,
-    input logic [15:0] port
-);
-    logic [47:0] key;
-    logic [31:0] mix;
-
-    key = {ip, port};  // 48 bits
-
-    // Fold down to 32 bits with some rotation-ish mixing
-    mix = key[31:0] ^ {key[47:32], key[15:0]};
-
-    // Multiplicative hash (odd constant, like Knuth's)
-    mix = mix * 32'h9E3779B1;
-
-    // Take upper 16 bits (usually better than lower)
-    return mix[31:16];
-endfunction
-
-
-function automatic logic [15:0] swap_bytes_2(input logic [15:0] din);
-    swap_bytes_2 = {din[7:0], din[15:8]};
-endfunction
-
-function automatic logic [31:0] swap_bytes_4(input logic [31:0] din);
-    for (int i = 0; i < 4; i++) begin
-        swap_bytes_4[i*8 +: 8] = din[(4-1-i)*8 +: 8];
-    end
-endfunction
-
-function automatic logic [47:0] swap_bytes_6(input logic [47:0] din);
-    for (int i = 0; i < 6; i++) begin
-        swap_bytes_6[i*8 +: 8] = din[(6-1-i)*8 +: 8];
-    end
-endfunction
-
-
-
-
 `endif  // UDP_ENGINE_100G_HEADER
-
