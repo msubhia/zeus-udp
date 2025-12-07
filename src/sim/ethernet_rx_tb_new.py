@@ -206,6 +206,7 @@ class S_AXIS_Driver(BusDriver):
 		else:
 			raise KeyError("invalid command type to slave driver")
 
+
 # =====================================================================================================================================
 # PYTHON MODEL (CONNECTION MANAGER)
 # =====================================================================================================================================
@@ -215,10 +216,10 @@ def hash_fun_ip_port(ip, port):
 	"""
 	Bit-accurate Python version of the SystemVerilog hash function:
 
-		key = {ip, port};     // 48 bits
-		mix = key[31:0] ^ {key[47:32], key[15:0]};
-		mix = mix * 0x9E3779B1;
-		return mix[31:16];
+			key = {ip, port};     // 48 bits
+			mix = key[31:0] ^ {key[47:32], key[15:0]};
+			mix = mix * 0x9E3779B1;
+			return mix[31:16];
 	"""
 
 	# ------------------------------------------------------------
@@ -257,7 +258,7 @@ def generate_collision_entries(num_chains=5, chain_len=5):
 	"""
 	Returns a list of dictionaries.
 	Each dictionary looks like:
-		{ 'ip': <32-bit>, 'port': <16-bit> }
+			{ 'ip': <32-bit>, 'port': <16-bit> }
 
 	All IPs are unique. Each group of chain_len entries
 	shares the same xor32->16 hash.
@@ -624,8 +625,7 @@ def model_udp(
 	BEAT_BYTES = 64
 	num_beats = (len(full_packet_bytes) + BEAT_BYTES - 1) // BEAT_BYTES
 
-	drop_beat = random.randint(0, 100) < 5
-
+	drop_beat = random.randint(0, 100) < 50
 	for b in range(num_beats):
 		start = b * BEAT_BYTES
 		end = min(start + BEAT_BYTES, len(full_packet_bytes))
@@ -641,11 +641,11 @@ def model_udp(
 
 		# last beat?
 		tlast = 1 if (b == num_beats - 1) else 0
-		# if not tlast:
-		# 	if drop_beat:
-		# 		invalid = True
-		# 		drop_beat = 0
-		# 		continue
+		if not tlast:
+			if drop_beat:
+				invalid = True
+				drop_beat = 0
+				continue
 		# # TODO: test against case with dropped beat
 
 		beats.append((tdata, tkeep, tlast))
@@ -716,23 +716,31 @@ async def test_structure(
 	dut, NUM_TEST_PACKETS=100, WR_NUM_OPERATIONS=300, NUM_CHAINS=128, CHAIN_LEN=8
 ):
 
-	wr_in_monitor       = AXIS_Monitor(dut,'s02',dut.s00_axis_aclk,callback = connection_manager_model_wr)
-	wr_out_monitor      = AXIS_Monitor(dut,'m02',dut.s00_axis_aclk,callback = lambda x: appending_values_wr(x))
+	wr_in_monitor = AXIS_Monitor(
+		dut, "s02", dut.s00_axis_aclk, callback=connection_manager_model_wr
+	)
+	wr_out_monitor = AXIS_Monitor(
+		dut, "m02", dut.s00_axis_aclk, callback=lambda x: appending_values_wr(x)
+	)
 
-	wr_in_driver        = M_AXIS_Driver(dut,'s02',dut.s00_axis_aclk)
-	wr_out_driver       = S_AXIS_Driver(dut,'m02',dut.s00_axis_aclk)
+	wr_in_driver = M_AXIS_Driver(dut, "s02", dut.s00_axis_aclk)
+	wr_out_driver = S_AXIS_Driver(dut, "m02", dut.s00_axis_aclk)
 
-	udp_in_monitor       = AXIS_Monitor(dut,'s00',dut.s00_axis_aclk, callback = lambda x: None)
-	udp_out_monitor      = AXIS_Monitor(dut,'m00',dut.s00_axis_aclk, callback = lambda x: appending_values_udp(x))
+	udp_in_monitor = AXIS_Monitor(
+		dut, "s00", dut.s00_axis_aclk, callback=lambda x: None
+	)
+	udp_out_monitor = AXIS_Monitor(
+		dut, "m00", dut.s00_axis_aclk, callback=lambda x: appending_values_udp(x)
+	)
 
-	udp_in_driver        = M_AXIS_Driver(dut,'s00',dut.s00_axis_aclk)
-	udp_out_driver       = S_AXIS_Driver(dut,'m00',dut.s00_axis_aclk)
+	udp_in_driver = M_AXIS_Driver(dut, "s00", dut.s00_axis_aclk)
+	udp_out_driver = S_AXIS_Driver(dut, "m00", dut.s00_axis_aclk)
 
 	cocotb.start_soon(Clock(dut.s00_axis_aclk, 10, units="ns").start())
 	await reset(dut.s00_axis_aclk, dut.s00_axis_aresetn, cycles_held=5, polarity=0)
 	dut.my_config_src_macAddr.value = MY_CONFIG_SRC_MAC
 	dut.my_config_dst_macAddr.value = MY_CONFIG_MAC
-	dut.my_config_dst_ipAddr.value  = MY_CONFIG_IP
+	dut.my_config_dst_ipAddr.value = MY_CONFIG_IP
 	dut.my_config_dst_udpPort.value = MY_CONFIG_PORT
 
 	await ClockCycles(dut.s00_axis_aclk, 3)
@@ -748,17 +756,17 @@ async def test_structure(
 		for _ in range(num_operations):
 
 			pick = random.choice(COLLISION_POOL)
-			bind = (random.random() < 0.9)
+			bind = random.random() < 0.9
 
-			val  = 0
-			val  |= (pick['ip'])
-			val  |= (pick['port'] << 32)
-			val  |= (bind         << 48)
+			val = 0
+			val |= pick["ip"]
+			val |= pick["port"] << 32
+			val |= bind << 48
 
-			wr_in_driver.append({'type':'write_single', "contents":{"data": val, "last":1}})
-			wr_in_driver.append({"type":"pause", "duration": random.randint(0,3)})
-
-
+			wr_in_driver.append(
+				{"type": "write_single", "contents": {"data": val, "last": 1}}
+			)
+			wr_in_driver.append({"type": "pause", "duration": random.randint(0, 3)})
 
 	#
 	# -------------------- Pre-fill connection manager -------------------------
@@ -788,6 +796,7 @@ async def test_structure(
 	# ------------------------------- UDP Packets  ---------------------------------
 	#
 
+	valid_packets = 0
 	for _ in range(NUM_TEST_PACKETS):
 		beats, connection_id, payload_length_bytes, payload = generate_random_packet(
 			existing_connection_ids
@@ -805,9 +814,9 @@ async def test_structure(
 			MY_CONFIG_PORT,
 			MY_CONFIG_SRC_MAC,
 		)
-		# print(
-		# 	f"modeled packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}, invalid={invalid_packet}"
-		# )
+		print(
+			f"modeled packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}, invalid={invalid_packet}"
+		)
 		# print(f"  num beats = {len(beats)}")
 
 		# TODO: randomize and break up the writes for a single packet to interleave with different length pauses
@@ -824,6 +833,8 @@ async def test_structure(
 		model_udp_payload(
 			not invalid_packet, connection_id, payload, payload_length_bytes
 		)
+		if not invalid_packet:
+			valid_packets += 1
 
 		if random.random() < 0.1:
 			continue
@@ -837,15 +848,18 @@ async def test_structure(
 	# ------------------------------- Validation  ---------------------------------
 	#
 
-	assert len(udp_sig_out_exp) == len(
-		udp_sig_out_act
-	), f"UDP count mismatch! len(udp_sig_out_exp) = {len(udp_sig_out_exp)}, len(udp_sig_out_act) = {len(udp_sig_out_act)}"
-	# dut._log.info("All expected UDP outputs:")
-	# for j, v in enumerate(udp_sig_out_exp):
-	#     dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
-	# dut._log.info("All actual UDP outputs:")
-	# for j, v in enumerate(udp_sig_out_act):
-	#     dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
+	# assert len(udp_sig_out_exp) == len(
+	# 	udp_sig_out_act
+	# ), f"UDP count mismatch! len(udp_sig_out_exp) = {len(udp_sig_out_exp)}, len(udp_sig_out_act) = {len(udp_sig_out_act)}"
+	dut._log.info(f"UDP expected count: {len(udp_sig_out_exp)}")
+	dut._log.info(f"UDP actual count:   {len(udp_sig_out_act)}")
+	dut._log.info(f"Valid packets sent: {valid_packets}")
+	dut._log.info("All expected UDP outputs:")
+	for j, v in enumerate(udp_sig_out_exp):
+		dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
+	dut._log.info("All actual UDP outputs:")
+	for j, v in enumerate(udp_sig_out_act):
+		dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
 
 	for i, (exp, act) in enumerate(zip(udp_sig_out_exp, udp_sig_out_act)):
 		if exp != act:

@@ -122,7 +122,7 @@ module ethernet_rx #(
       .s_axis_tdata(cmac_rx_axis_tdata),
       .s_axis_tkeep(cmac_rx_axis_tkeep),
       .s_axis_tlast(cmac_rx_axis_tlast),
-      .s_axis_tvalid(cmac_rx_axis_tvalid  /*& tx_engine_enable & (!tx_engine_bypass)*/),
+      .s_axis_tvalid(cmac_rx_axis_tvalid  && header_valid_eager /*& tx_engine_enable & (!tx_engine_bypass)*/),
       .s_axis_tready(cmac_rx_axis_tready),  // should always be ready
 
       // output to payload processing signals
@@ -185,7 +185,7 @@ module ethernet_rx #(
 
   always_ff @(posedge rx_axis_aclk) begin
     if (!rx_axis_aresetn) is_first_transaction <= 1;
-    else if (cmac_rx_axis_tvalid && udp_rx_axis_tready) begin
+    else if (cmac_rx_axis_tvalid && cmac_rx_axis_tready) begin
       if (cmac_rx_axis_tlast) is_first_transaction <= 1;
       else is_first_transaction <= 0;
     end
@@ -255,12 +255,36 @@ module ethernet_rx #(
   // Length Sum and Expected Capture and Check
   // ----------------------------------------------------------------------------------------------
   // holds a valid value from the first transaction through the end of the packet (including the tlast cycle)
+  // this fsm should only initiate on the first transaction of a packet with a valid
   logic [IP_PACKET_LENGTH_WIDTH-1:0] expected_udp_length;
+  logic                              expected_udp_length_valid;
   logic [IP_PACKET_LENGTH_WIDTH-1:0] expected_udp_length_post;
   logic                              expected_udp_length_post_valid;
   logic [IP_PACKET_LENGTH_WIDTH-1:0] current_udp_length;
   logic [IP_PACKET_LENGTH_WIDTH-1:0] current_udp_length_post;
   logic                              current_udp_length_post_valid;
+
+
+  logic                              header_valid_reg;
+  logic                              header_valid_eager;
+  // FSM for header validity
+  // header_valid_reg rises on the first transaction if the header is valid
+  // stays high until and including the tlast of the stream of incoming cmac_rx transactions
+  // resets to 0 on rx_axis_aresetn
+  always_ff @(posedge rx_axis_aclk) begin
+    if (!rx_axis_aresetn) begin
+      header_valid_reg <= 1'b0;
+    end else begin
+      if (cmac_rx_axis_tvalid && cmac_rx_axis_tready) begin
+        if (is_first_transaction) begin
+          header_valid_reg <= header_valid;
+        end else if (cmac_rx_axis_tlast) begin
+          header_valid_reg <= 1'b0;
+        end
+      end
+    end
+  end
+  assign header_valid_eager = is_first_transaction ? header_valid : header_valid_reg;
 
   always_ff @(posedge rx_axis_aclk) begin
     if (!rx_axis_aresetn) begin
@@ -273,15 +297,16 @@ module ethernet_rx #(
           if (cmac_rx_axis_tlast) begin
             expected_udp_length            <= 'b0;
             expected_udp_length_post       <= udp_rx_axis_length;
-            expected_udp_length_post_valid <= 1'b1;
+            expected_udp_length_post_valid <= is_first_transaction && header_valid;
           end else begin
             expected_udp_length            <= udp_rx_axis_length;
+            expected_udp_length_valid      <= is_first_transaction && header_valid;
             expected_udp_length_post       <= 'b0;
             expected_udp_length_post_valid <= 1'b0;
           end
         end else if (cmac_rx_axis_tlast) begin
           expected_udp_length_post       <= expected_udp_length;
-          expected_udp_length_post_valid <= 1'b1;
+          expected_udp_length_post_valid <= expected_udp_length_valid;
         end else begin
           expected_udp_length_post       <= 'b0;
           expected_udp_length_post_valid <= 1'b0;

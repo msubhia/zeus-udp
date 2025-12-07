@@ -94,7 +94,8 @@ module rx_payload_constructor #(
   // behavior south of the fifo
   typedef enum logic [1:0] {
     IDLE    = 2'b00,
-    TRANSFER = 2'b01
+    TRANSFER = 2'b01,
+    HOLLOW = 2'b10
   } state_t;
   state_t state;
 
@@ -119,8 +120,6 @@ module rx_payload_constructor #(
 
 
   logic packet_valid;
-  logic last_packet_valid;
-  logic disable_status_fifos;
 
   assign connection_fw_lookup_id = connection_fifo_tdata[CONN_ID_WIDTH-1:0];
   assign connection_fw_lookup_hit = connection_fifo_tdata[CONN_ID_WIDTH];
@@ -130,36 +129,6 @@ module rx_payload_constructor #(
   assign all_fifos_valid = payload_fifo_tvalid && connection_fifo_tvalid && length_check_fifo_out_tvalid;
   assign packet_valid = all_fifos_valid && connection_fw_lookup_hit && length_check_pass;
 
-
-  // Invalid Packet Flushing FSM: 
-  always_ff @(posedge rx_axis_aclk) begin
-    if (!rx_axis_aresetn) begin
-      // reset state
-      last_packet_valid <= 1'b1;
-      disable_status_fifos <= 1'b0;
-    end else begin
-      if (all_fifos_valid) begin
-        if (payload_fifo_tlast) begin
-          // if it's a single cycle packet we reset
-          last_packet_valid <= 1'b1;
-          disable_status_fifos <= 1'b0;
-          // if it's a single cycle packet and it's invalid that still doesnt invalidate the next one
-          // the fifos still need to be synchronized
-        end else begin
-          last_packet_valid <= packet_valid;
-          disable_status_fifos <= !packet_valid;
-        end
-      end else begin
-        // reset when we get to the end of the invalid packet
-        if (payload_fifo_tvalid && payload_fifo_tready && payload_fifo_tlast) begin
-          last_packet_valid <= 1'b1;
-          disable_status_fifos <= 1'b0;
-        end
-      end
-    end
-  end
-
-
   always_ff @(posedge rx_axis_aclk) begin
     if (!rx_axis_aresetn) begin
       // reset state
@@ -167,7 +136,7 @@ module rx_payload_constructor #(
     end else begin
       case (state)
         IDLE: begin
-          if (all_fifos_valid) begin
+          if (all_fifos_valid && payload_fifo_tready) begin
             // only go to TRANSFER on valid from length_check and connection_hit 
             if (packet_valid) begin
               if (payload_fifo_tlast) begin
@@ -176,7 +145,13 @@ module rx_payload_constructor #(
               end else begin
                 state <= TRANSFER;
               end
-
+            end else begin
+              if (payload_fifo_tlast) begin
+                // No need to transition
+                // Output setting is handled in output logic at the end
+              end else begin
+                state <= HOLLOW;
+              end
             end
           end
         end
@@ -186,7 +161,14 @@ module rx_payload_constructor #(
               state <= IDLE;
             end
           end
+        end
 
+        HOLLOW: begin
+          if (payload_fifo_tvalid && payload_fifo_tready) begin
+            if (payload_fifo_tlast) begin
+              state <= IDLE;
+            end
+          end
         end
         default: begin
           // default case
@@ -388,9 +370,11 @@ module rx_payload_constructor #(
   //  (state == IDLE && ((packet_valid && (payload_reg_valid || (!payload_reg_valid && !payload_fifo_tlast))) || (packet_valid && payload_fifo_tlast && !payload_reg_valid))) ||
   //       (state == TRANSFER && ((payload_fifo_tvalid && payload_reg_valid) || (payload_reg_valid && !payload_reg_full ) || (!payload_reg_valid))) 
   //       );
-  assign payload_fifo_tready = payload_out_tready && ((state == IDLE && (all_fifos_valid || !last_packet_valid)) || (state == TRANSFER));
-  assign connection_fifo_tready = state == IDLE && all_fifos_valid && !disable_status_fifos;
-  assign length_check_fifo_out_tready = state == IDLE && all_fifos_valid && !disable_status_fifos;
+  logic can_start_packet;
+  assign can_start_packet = (state == IDLE) && all_fifos_valid && payload_out_tready;
+  assign payload_fifo_tready = (can_start_packet || (state == TRANSFER) || (state == HOLLOW));
+  assign connection_fifo_tready = can_start_packet;
+  assign length_check_fifo_out_tready = can_start_packet;
 
 
   // =================================================================
@@ -548,6 +532,13 @@ module rx_payload_constructor #(
             end
           end
         end
+
+		HOLLOW: begin
+			payload_out_tdata_bytes <= '0;
+			payload_out_tkeep <= '0;
+			payload_out_tvalid <= 1'b0;
+			payload_out_tlast <= 1'b0;
+		end
       endcase
     end
   end
