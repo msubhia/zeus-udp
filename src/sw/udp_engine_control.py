@@ -513,7 +513,7 @@ class udp_model:
         mode = random.randint(0, 2)
 
         if mode == 0:
-            base_len = random.randrange(8, 176, 8)
+            base_len = random.randrange(0, 176, 8)
         elif mode == 1:
             base_len = 176
         else:
@@ -522,6 +522,7 @@ class udp_model:
         payload_length_bits = base_len + n * 512
         assert(payload_length_bits % 8 == 0)
         payload_length_bytes = payload_length_bits // 8
+        payload_length_bytes = max(payload_length_bytes, 60)
 
         # ------------------------------------------------------------
         # 2. Payload bytes (list of ints)
