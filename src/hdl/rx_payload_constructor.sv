@@ -184,39 +184,18 @@ module rx_payload_constructor #(
   logic [DATA_WIDTH/8-1:0] payload_reg_keep;
   logic payload_reg_last;
   logic payload_reg_valid;
-  logic payload_reg_full;
   logic [$clog2(DATA_WIDTH/8):0] payload_reg_rem_count;
-  logic [$clog2(DATA_WIDTH/8):0] payload_fifo_occupied_count;
-  logic [DATA_WIDTH/8-1:0] reversed_payload_fifo_tkeep;
-  logic is_last_beat_compact;
 
-  clz_tree #(DATA_WIDTH / 8) payload_reg_rem_counter (
-      .in (payload_reg_keep),
-      .clz(payload_reg_rem_count)
-  );
-
-  always_comb begin
-    for (int i = 0; i < DATA_WIDTH / 8; i++) begin
-      reversed_payload_fifo_tkeep[i] = !payload_fifo_tkeep[DATA_WIDTH/8-1-i];
-    end
-  end
-  clz_tree #(DATA_WIDTH / 8) payload_fifo_occupied_counter (
-      .in({
-        reversed_payload_fifo_tkeep
-      }),  // re-use the clz module to count the number of lower ones
-      .clz(payload_fifo_occupied_count)
-  );
-
-  assign payload_reg_full = (payload_reg_rem_count == 0);
-  assign is_last_beat_compact = payload_fifo_occupied_count <= payload_reg_rem_count;
+  //   assign payload_reg_rem_count = DATA_WIDTH/8 - $countones(payload_reg_keep);
 
 
   always_ff @(posedge rx_axis_aclk) begin
     if (!rx_axis_aresetn) begin
       // reset registers
-      payload_reg_data  <= '0;
-      payload_reg_keep  <= '0;
-      payload_reg_last  <= 1'b0;
+      payload_reg_data <= '0;
+      payload_reg_keep <= '0;
+      payload_reg_rem_count <= '0;
+      payload_reg_last <= 1'b0;
       payload_reg_valid <= 1'b0;
     end else begin
       case (state)
@@ -257,19 +236,24 @@ module rx_payload_constructor #(
                   payload_reg_keep[i+8] <= payload_fifo_tkeep[i+(HEADER_SIZE_BYTES)];
                 end
                 payload_reg_keep[DATA_WIDTH/8-1:8+FIRST_TRANSACTION_PAYLOAD_SIZE] <= {(DATA_WIDTH/8 - (8 + FIRST_TRANSACTION_PAYLOAD_SIZE)) {1'b0}};
+                payload_reg_rem_count <= DATA_WIDTH / 8 - (8 + $countones(
+                    payload_fifo_tkeep[DATA_WIDTH/8-1:DATA_WIDTH/8-FIRST_TRANSACTION_PAYLOAD_SIZE]
+                ));
               end else begin
                 // reset registers back to invalid
-                payload_reg_data  <= '0;
-                payload_reg_keep  <= '0;
-                payload_reg_last  <= 1'b0;
+                payload_reg_data <= '0;
+                payload_reg_keep <= '0;
+                payload_reg_rem_count <= '0;
+                payload_reg_last <= 1'b0;
                 payload_reg_valid <= 1'b0;
               end
             end else begin
               // if we don't have an incoming packet,
               // clear the data since it will be output by the next cycle
-              payload_reg_data  <= '0;
-              payload_reg_keep  <= '0;
-              payload_reg_last  <= 1'b0;
+              payload_reg_data <= '0;
+              payload_reg_keep <= '0;
+              payload_reg_rem_count <= '0;
+              payload_reg_last <= 1'b0;
               payload_reg_valid <= 1'b0;
             end
           end else begin
@@ -278,9 +262,10 @@ module rx_payload_constructor #(
             // if payload_reg_valid is set but it's not a last, we need to keep it
             // if payload_reg_valid is set and it's last, we can clear it
             if ((payload_reg_valid && payload_reg_last) || (!payload_reg_valid)) begin
-              payload_reg_data  <= '0;
-              payload_reg_keep  <= '0;
-              payload_reg_last  <= 1'b0;
+              payload_reg_data <= '0;
+              payload_reg_keep <= '0;
+              payload_reg_rem_count <= '0;
+              payload_reg_last <= 1'b0;
               payload_reg_valid <= 1'b0;
             end else begin
             end
@@ -289,44 +274,33 @@ module rx_payload_constructor #(
         TRANSFER: begin
           if (payload_fifo_tvalid && payload_fifo_tready) begin
             if (payload_reg_valid) begin
-              if (payload_reg_full) begin
-                // the whole transaction will be written to reg literally
-                // since the output fsm will always flush the register when it's valid and full by the next cycle
-                payload_reg_data  <= payload_fifo_tdata_bytes;
-                payload_reg_keep  <= payload_fifo_tkeep;
-                payload_reg_last  <= payload_fifo_tlast;
-                payload_reg_valid <= 1'b1;
-              end else begin
-                // the register is valid and not yet full
-                // we fill in the rest of the register with incoming data depending on how many bytes are in it currently
+              // the register is valid and not yet full
+              // we fill in the rest of the register with incoming data depending on how many bytes are in it currently
 
-                // write the remaining data from the incoming data to the reg
-                if (payload_fifo_tlast && is_last_beat_compact) begin
-                  payload_reg_data  <= '0;
-                  payload_reg_keep  <= '0;
-                  payload_reg_last  <= 1'b0;
-                  payload_reg_valid <= 1'b0;
+              // write the remaining data from the incoming data to the reg
+              for (int i = 0; i < DATA_WIDTH / 8; i++) begin
+                if (i < (DATA_WIDTH / 8 - payload_reg_rem_count)) begin
+                  // Load new byte
+                  payload_reg_data[i] <= payload_fifo_tdata_bytes[i+payload_reg_rem_count];
+                  payload_reg_keep[i] <= payload_fifo_tkeep[i+payload_reg_rem_count];
                 end else begin
-                  for (int i = 0; i < DATA_WIDTH / 8; i++) begin
-                    if (i < (DATA_WIDTH / 8 - payload_reg_rem_count)) begin
-                      // Load new byte
-                      payload_reg_data[i] <= payload_fifo_tdata_bytes[i+payload_reg_rem_count];
-                      payload_reg_keep[i] <= payload_fifo_tkeep[i+payload_reg_rem_count];
-                    end else begin
-                      // Keep old value
-                      payload_reg_data[i] <= payload_reg_data[i];
-                      payload_reg_keep[i] <= payload_reg_keep[i];
-                    end
-                  end
-                  payload_reg_last  <= payload_fifo_tlast;
-                  payload_reg_valid <= 1'b1;
+                  // Keep old value
+                  payload_reg_data[i] <= payload_reg_data[i];
+                  payload_reg_keep[i] <= payload_reg_keep[i];
                 end
               end
+              // known widths
+              // if the incoming transaction is the last one we don't care about rem count
+              // if it's not the last we know that it has to be full then the rem count just fills and refills with the same value
+              payload_reg_rem_count <= payload_fifo_tlast ? 0 : payload_reg_rem_count;
+              payload_reg_last <= payload_fifo_tlast;
+              payload_reg_valid <= 1'b1;
             end else begin
               // if the register is invalid, this is pass-through behavior
-              payload_reg_data  <= '0;
-              payload_reg_keep  <= '0;
-              payload_reg_last  <= 1'b0;
+              payload_reg_data <= '0;
+              payload_reg_keep <= '0;
+              payload_reg_rem_count <= 0;
+              payload_reg_last <= 1'b0;
               payload_reg_valid <= 1'b0;
             end
           end else begin
@@ -334,21 +308,11 @@ module rx_payload_constructor #(
             if (payload_reg_valid) begin
               if (payload_reg_last) begin
                 // if it's last, we can clear it, illegal to append data to that register
-                payload_reg_data  <= '0;
-                payload_reg_keep  <= '0;
-                payload_reg_last  <= 1'b0;
+                payload_reg_data <= '0;
+                payload_reg_keep <= '0;
+                payload_reg_rem_count <= 0;
+                payload_reg_last <= 1'b0;
                 payload_reg_valid <= 1'b0;
-              end else begin
-                if (payload_reg_full) begin
-                  // it would be output by the next cycle
-                  payload_reg_data  <= '0;
-                  payload_reg_keep  <= '0;
-                  payload_reg_last  <= 1'b0;
-                  payload_reg_valid <= 1'b0;
-                end else begin
-                  // if reg is not full and not last, we have to keep it
-                  // in the case that 
-                end
               end
             end else begin
               // reg is empty leave it 
@@ -366,10 +330,6 @@ module rx_payload_constructor #(
   // =================================================================
   // FIFO Ready Signals
   // =================================================================
-  //   assign payload_fifo_tready = payload_out_tready && (
-  //  (state == IDLE && ((packet_valid && (payload_reg_valid || (!payload_reg_valid && !payload_fifo_tlast))) || (packet_valid && payload_fifo_tlast && !payload_reg_valid))) ||
-  //       (state == TRANSFER && ((payload_fifo_tvalid && payload_reg_valid) || (payload_reg_valid && !payload_reg_full ) || (!payload_reg_valid))) 
-  //       );
   logic can_start_packet;
   assign can_start_packet = (state == IDLE) && all_fifos_valid && payload_out_tready;
   assign payload_fifo_tready = (can_start_packet || (state == TRANSFER) || (state == HOLLOW));
@@ -443,7 +403,7 @@ module rx_payload_constructor #(
             // fifo empty while we're in idle
 
             // we only flush from the reg when it's valid with either tlast or full
-            if (payload_reg_valid && (payload_reg_last || payload_reg_full)) begin
+            if (payload_reg_valid && (payload_reg_last)) begin
               // output from the register
               for (int i = 0; i < DATA_WIDTH / 8; i++) begin
                 payload_out_tdata_bytes[i] <= payload_reg_data[i];
@@ -465,37 +425,29 @@ module rx_payload_constructor #(
           // transaction
           if (payload_fifo_tvalid && payload_fifo_tready) begin
             if (payload_reg_valid) begin
-              if (payload_reg_full) begin
-                // output from the register
-                payload_out_tdata_bytes <= payload_reg_data;
-                payload_out_tkeep <= payload_reg_keep;
-                payload_out_tvalid <= 1'b1;
-                payload_out_tlast <= payload_reg_last;
-              end else begin
-                // the register is valid and not full
-                // we output the bottom bytes from the current transaction + the rest from the register
+              // the register is valid and not full
+              // we output the bottom bytes from the current transaction + the rest from the register
 
 
-                // occupied bytes in the register = DATA_WIDTH/8 - payload_reg_rem_count
-                for (int i = 0; i < DATA_WIDTH / 8; i++) begin
+              // occupied bytes in the register = DATA_WIDTH/8 - payload_reg_rem_count
+              for (int i = 0; i < DATA_WIDTH / 8; i++) begin
 
-                  if (i < DATA_WIDTH / 8 - payload_reg_rem_count) begin
-                    // First X bytes from register
-                    payload_out_tdata_bytes[i] <= payload_reg_data[i];
-                    payload_out_tkeep[i]       <= payload_reg_keep[i];
+                if (i < DATA_WIDTH / 8 - payload_reg_rem_count) begin
+                  // First X bytes from register
+                  payload_out_tdata_bytes[i] <= payload_reg_data[i];
+                  payload_out_tkeep[i]       <= payload_reg_keep[i];
 
-                  end else begin
-                    payload_out_tdata_bytes[i] <= payload_fifo_tdata_bytes[i - (DATA_WIDTH/8 - payload_reg_rem_count)];
-                    payload_out_tkeep[i]       <= payload_fifo_tkeep[i - (DATA_WIDTH/8 - payload_reg_rem_count)];
-                  end
+                end else begin
+                  payload_out_tdata_bytes[i] <= payload_fifo_tdata_bytes[i - (DATA_WIDTH/8 - payload_reg_rem_count)];
+                  payload_out_tkeep[i]       <= payload_fifo_tkeep[i - (DATA_WIDTH/8 - payload_reg_rem_count)];
                 end
-
-                // if the incoming transaction is too small to require another stage we can have this be tlast = 1
-                // if the next one is tlast = 1 and the length fits in the remaining space
-
-                payload_out_tvalid <= 1'b1;
-                payload_out_tlast  <= payload_reg_last || (is_last_beat_compact && payload_fifo_tlast);
               end
+
+              // if the incoming transaction is too small to require another stage we can have this be tlast = 1
+              // if the next one is tlast = 1 and the length fits in the remaining space
+
+              payload_out_tvalid <= 1'b1;
+              payload_out_tlast  <= payload_reg_last;
             end else begin
               // no pending data in the register, pass-through behavior
               payload_out_tdata_bytes <= payload_fifo_tdata_bytes;
@@ -507,7 +459,7 @@ module rx_payload_constructor #(
             // no transaction
             // but potential full register
             if (payload_reg_valid) begin
-              if (payload_reg_last || payload_reg_full) begin
+              if (payload_reg_last) begin
                 // output from the register
                 for (int i = 0; i < DATA_WIDTH / 8; i++) begin
                   payload_out_tdata_bytes[i] <= payload_reg_data[i];
@@ -533,12 +485,12 @@ module rx_payload_constructor #(
           end
         end
 
-		HOLLOW: begin
-			payload_out_tdata_bytes <= '0;
-			payload_out_tkeep <= '0;
-			payload_out_tvalid <= 1'b0;
-			payload_out_tlast <= 1'b0;
-		end
+        HOLLOW: begin
+          payload_out_tdata_bytes <= '0;
+          payload_out_tkeep <= '0;
+          payload_out_tvalid <= 1'b0;
+          payload_out_tlast <= 1'b0;
+        end
       endcase
     end
   end

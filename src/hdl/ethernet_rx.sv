@@ -398,12 +398,52 @@ module ethernet_rx #(
       .length_check_fifo_out_tdata (length_check_fifo_out_tdata),
       .length_check_fifo_out_tready(length_check_fifo_out_tready),
 
-      .payload_out_tready(udp_rx_axis_tready),
-      .payload_out_tdata (udp_rx_axis_tdata),
-      .payload_out_tkeep (udp_rx_axis_tkeep),
-      .payload_out_tvalid(udp_rx_axis_tvalid),
-      .payload_out_tlast (udp_rx_axis_tlast)
+      .payload_out_tready(udp_rx_axis_tready_prev),
+      .payload_out_tdata (udp_rx_axis_tdata_prev),
+      .payload_out_tkeep (udp_rx_axis_tkeep_prev),
+      .payload_out_tvalid(udp_rx_axis_tvalid_prev),
+      .payload_out_tlast (udp_rx_axis_tlast_prev)
   );
+
+  // ==============================================================================================
+  // FSM for removing empty transactions at the end of a packet
+  // ==============================================================================================
+  logic [  DATA_WIDTH-1:0] udp_rx_axis_tdata_reg;
+  logic [DATA_WIDTH/8-1:0] udp_rx_axis_tkeep_reg;
+  logic                    udp_rx_axis_tlast_reg;
+  logic                    udp_rx_axis_tvalid_reg;
+  logic                    udp_rx_axis_tready_reg;
+
+  logic [  DATA_WIDTH-1:0] udp_rx_axis_tdata_prev;
+  logic [DATA_WIDTH/8-1:0] udp_rx_axis_tkeep_prev;
+  logic                    udp_rx_axis_tvalid_prev;
+  logic                    udp_rx_axis_tlast_prev;
+  logic                    udp_rx_axis_tready_prev;
+
+
+  always_ff @(posedge rx_axis_aclk) begin
+    if (!rx_axis_aresetn) begin
+      udp_rx_axis_tdata  <= '0;
+      udp_rx_axis_tkeep  <= '0;
+      udp_rx_axis_tvalid <= 1'b0;
+      udp_rx_axis_tlast  <= 1'b0;
+    end else begin
+      udp_rx_axis_tdata_reg <= udp_rx_axis_tdata_prev;
+      udp_rx_axis_tkeep_reg <= udp_rx_axis_tkeep_prev;
+      udp_rx_axis_tlast_reg <= udp_rx_axis_tlast_prev;
+      udp_rx_axis_tvalid_reg <= udp_rx_axis_tvalid_prev;
+      udp_rx_axis_tready_prev <= udp_rx_axis_tready_reg;
+
+      // reg to out
+      udp_rx_axis_tdata <= udp_rx_axis_tdata_reg;
+      udp_rx_axis_tkeep <= udp_rx_axis_tkeep_reg;
+      udp_rx_axis_tlast <= udp_rx_axis_tlast_reg || (udp_rx_axis_tlast_prev && (udp_rx_axis_tkeep_prev == '0));
+      udp_rx_axis_tvalid <= udp_rx_axis_tvalid_reg && (udp_rx_axis_tkeep_reg != '0);
+      udp_rx_axis_tready_reg <= udp_rx_axis_tready;
+    end
+  end
+
+
 
 endmodule
 `default_nettype wire
