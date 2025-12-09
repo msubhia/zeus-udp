@@ -8,9 +8,6 @@ parameter int BYTE_SIZE = 8;
 parameter int MAC_ADDR_SIZE = 6 * BYTE_SIZE;
 parameter int ETH_TYPE_SIZE = 2 * BYTE_SIZE;
 
-parameter int ETHTYPE_IP = 16'h0800;  // Internet protocol
-parameter int ETHTYPE_ARP = 16'h0806;  // Address resolution protocol
-
 typedef struct packed {  // 14 bytes
   // preamble omitted
   logic [MAC_ADDR_SIZE-1:0] dst_mac;
@@ -23,13 +20,6 @@ typedef struct packed {  // 14 bytes
 // ----------------------------------------------------------------
 // IP
 // ----------------------------------------------------------------
-parameter int IP_VERSION_IPV4 = 4;
-parameter int IP_VERSION_IPV6 = 6;
-parameter int IP_HEADER_BYTES = 20;
-
-parameter int IP_PROTO_ICMP = 1;  // Control message protocol
-parameter int IPPROTO_TCP = 6;  // Transmission control protocol
-parameter int IPPROTO_UDP = 17;  // User datagram protocol
 
 typedef struct packed {  // 20 bytes
   logic [3:0]  version;
@@ -85,9 +75,9 @@ parameter FIRST_TRANSACTION_PAYLOAD_SIZE = 512/8 - HEADER_SIZE_BYTES; // bytes a
 
 // ethernet header struct
 typedef struct packed {
-  ethernet_header_t                       eth_hdr;
-  ipv4_header_t                           ip_hdr;
-  udp_header_t                            udp_hdr;
+  ethernet_header_t                            eth_hdr;
+  ipv4_header_t                                ip_hdr;
+  udp_header_t                                 udp_hdr;
   // add padding to make it 512
   logic [FIRST_TRANSACTION_PAYLOAD_SIZE*8-1:0] payload_start;
 } header_t;
