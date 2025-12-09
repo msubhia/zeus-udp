@@ -185,44 +185,34 @@ class S_AXIS_Driver(BusDriver):
 
 def hash_fun_ip_port(ip, port):
     """
-    Bit-accurate Python version of the SystemVerilog hash function:
-    
-        key = {ip, port};     // 48 bits
-        mix = key[31:0] ^ {key[47:32], key[15:0]};
-        mix = mix * 0x9E3779B1;
-        return mix[31:16];
+    Bit-accurate Python version of the simplified XOR hash:
+
+        key  = {ip, port};  // 48 bits
+        hash = key[15:0] ^ key[31:16] ^ {8'b0, key[47:40]};
     """
 
     # ------------------------------------------------------------
     # 1. Construct 48-bit key = concat(ip[31:0], port[15:0])
     # ------------------------------------------------------------
     key = ((ip & 0xFFFFFFFF) << 16) | (port & 0xFFFF)
-    key &= (1 << 48) - 1   # keep 48 bits
+    key &= (1 << 48) - 1  # keep 48 bits
 
     # ------------------------------------------------------------
-    # 2. Extract pieces like in SystemVerilog slicing
+    # 2. Extract pieces like SystemVerilog slices
     # ------------------------------------------------------------
-    low_32     = key & 0xFFFFFFFF                    # key[31:0]
-    high_16    = (key >> 32) & 0xFFFF                # key[47:32]
-    low_16     = key & 0xFFFF                        # key[15:0]
+    low_16 = (key >> 0) & 0xFFFF  # key[15:0]
+    mid_16 = (key >> 16) & 0xFFFF  # key[31:16]
+    top_8 = (key >> 40) & 0xFF  # key[47:40]
 
-    # Equivalent to `{key[47:32], key[15:0]}` → 32-bit concat
-    folded     = ((high_16 << 16) | low_16) & 0xFFFFFFFF
-
-    # ------------------------------------------------------------
-    # 3. XOR fold into 32 bits
-    # ------------------------------------------------------------
-    mix = (low_32 ^ folded) & 0xFFFFFFFF
+    # Equivalent to {8'b0, key[47:40]}
+    top_16 = top_8  # zero-extended in top 8 bits
 
     # ------------------------------------------------------------
-    # 4. Multiplicative hash (Knuth constant)
+    # 3. XOR-fold into 16 bits
     # ------------------------------------------------------------
-    mix = (mix * 0x9E3779B1) & 0xFFFFFFFF
+    hash16 = (low_16 ^ mid_16 ^ top_16) & 0xFFFF
 
-    # ------------------------------------------------------------
-    # 5. Return upper 16 bits
-    # ------------------------------------------------------------
-    return (mix >> 16) & 0xFFFF
+    return hash16
 
 
 def generate_collision_entries(num_chains=5, chain_len=5):

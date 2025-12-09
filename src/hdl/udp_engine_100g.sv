@@ -447,11 +447,11 @@ module udp_engine_100g #(
       .udp_tx_axis_tvalid(udp_tx_axis_tvalid),
       .udp_tx_axis_tlast (udp_tx_axis_tlast),
 
-      .m01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
+      .m01_axis_rv_lookup_valid(s01_axis_rv_lookup_valid),
       .m01_axis_rv_lookup_connectionId(s01_axis_rv_lookup_connectionId),
-      .m01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
-      .s01_axis_rv_lookup_ready(s01_axis_rv_lookup_ready),
-      .s01_axis_rv_lookup_valid(s01_axis_rv_lookup_valid),
+      .m01_axis_rv_lookup_ready(s01_axis_rv_lookup_ready),
+      .s01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
+      .s01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
       .s01_axis_rv_lookup_hit(m01_axis_rv_lookup_hit),
       .s01_axis_rv_lookup_ipAddr(m01_axis_rv_lookup_ipAddr),
       .s01_axis_rv_lookup_udpPort(m01_axis_rv_lookup_udpPort)
