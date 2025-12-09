@@ -112,6 +112,20 @@ module ethernet_rx #(
   logic                           length_check_fifo_tvalid;
   logic                           length_check_fifo_tdata;
 
+
+  logic cmac_rx_axis_treadyp, cmac_rx_axis_tlastp, cmac_rx_axis_tvalidp;
+  logic [DATA_WIDTH-1:0] cmac_rx_axis_tdata;
+  logic [DATA_WIDTH/8-1:0] cmac_rx_axis_tkeep;
+  
+  always_ff @(posedge rx_axis_aclk) begin
+    cmac_rx_axis_tready <= cmac_rx_axis_treadyp;
+    cmac_rx_axis_tdata  <= cmac_rx_axis_tdata;
+    cmac_rx_axis_tkeep  <= cmac_rx_axis_tkeep;
+    cmac_rx_axis_tlastp <= cmac_rx_axis_tlast;
+    cmac_rx_axis_tvalidp <= cmac_rx_axis_tvalid  && header_valid_eager;
+  end
+
+
   fifo_axis_wrapper #(
       .FIFO_DEPTH (64),
       .TDATA_WIDTH(DATA_WIDTH)
@@ -119,11 +133,11 @@ module ethernet_rx #(
       // input from CMAC RX
       .s_aclk(rx_axis_aclk),
       .s_aresetn(rx_axis_aresetn),
-      .s_axis_tdata(cmac_rx_axis_tdata),
-      .s_axis_tkeep(cmac_rx_axis_tkeep),
-      .s_axis_tlast(cmac_rx_axis_tlast),
-      .s_axis_tvalid(cmac_rx_axis_tvalid  && header_valid_eager /*& tx_engine_enable & (!tx_engine_bypass)*/),
-      .s_axis_tready(cmac_rx_axis_tready),  // should always be ready
+      .s_axis_tdata(cmac_rx_axis_tdatap),
+      .s_axis_tkeep(cmac_rx_axis_tkeepp),
+      .s_axis_tlast(cmac_rx_axis_tlastp),
+      .s_axis_tvalid(cmac_rx_axis_tvalidp /*& tx_engine_enable & (!tx_engine_bypass)*/),
+      .s_axis_tready(cmac_rx_axis_treadyp),  // should always be ready
 
       // output to payload processing signals
       .m_aclk(rx_axis_aclk),

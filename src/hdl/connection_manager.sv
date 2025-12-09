@@ -187,18 +187,23 @@ module connection_manager #(
     // -------------------------------------------------------------------------
 
     // Pipeline input for output logic 
-    logic [BRAM_LATENCY:0][IP_ADDR_WIDTH-1:0]  fw_ipAddr_pipe;
-    logic [BRAM_LATENCY:0][UDP_PORT_WIDTH-1:0] fw_udpPort_pipe;
-    logic [BRAM_LATENCY:0][HASH_WIDTH-1:0]     fw_hash_idx_pipe;
-    logic [BRAM_LATENCY:0]                     fw_valid_pipe;
+    logic [BRAM_LATENCY+1:0][IP_ADDR_WIDTH-1:0]  fw_ipAddr_pipe;
+    logic [BRAM_LATENCY+1:0][UDP_PORT_WIDTH-1:0] fw_udpPort_pipe;
+    logic [BRAM_LATENCY+1:0][HASH_WIDTH-1:0]     fw_hash_idx_pipe;
+    logic [BRAM_LATENCY+1:0]                     fw_valid_pipe;
 
     always_ff @(posedge s00_axis_fw_lookup_aclk) begin
         fw_ipAddr_pipe[0]   <= s00_axis_fw_lookup_ipAddr;
-        fw_hash_idx_pipe[0] <= hash_fun_ip_port(s00_axis_fw_lookup_ipAddr, s00_axis_fw_lookup_udpPort);
+        fw_hash_idx_pipe[0] <= 'b0;
         fw_valid_pipe[0]    <= s00_axis_fw_lookup_valid;
         fw_udpPort_pipe[0]  <= s00_axis_fw_lookup_udpPort;
+        
+        fw_ipAddr_pipe[1]   <= fw_ipAddr_pipe[0];
+        fw_hash_idx_pipe[1] <= hash_fun_ip_port(fw_ipAddr_pipe[0], fw_udpPort_pipe[0]);
+        fw_valid_pipe[1]    <= fw_valid_pipe[0];
+        fw_udpPort_pipe[1]  <= fw_udpPort_pipe[0];
 
-        for (integer i=1; i<BRAM_LATENCY+1; i=i+1) begin
+        for (integer i=2; i<BRAM_LATENCY+2; i=i+1) begin
             fw_ipAddr_pipe[i]   <= fw_ipAddr_pipe[i-1];
             fw_hash_idx_pipe[i] <= fw_hash_idx_pipe[i-1];
             fw_valid_pipe[i]    <= fw_valid_pipe[i-1];
@@ -209,15 +214,15 @@ module connection_manager #(
     // output logic
     always_comb begin
         s00_axis_fw_lookup_ready        = 1'b1;
-        m00_axis_fw_lookup_valid        = fw_valid_pipe[BRAM_LATENCY];
+        m00_axis_fw_lookup_valid        = fw_valid_pipe[BRAM_LATENCY+1];
 
         m00_axis_fw_lookup_hit          = 1'b0;
         m00_axis_fw_lookup_connectionId = '0;
 
         for (int w = 0; w < WAYS; w++) begin
-            if (fw_valid[w] && (fw_tag[w] == {fw_ipAddr_pipe[BRAM_LATENCY], fw_udpPort_pipe[BRAM_LATENCY]})) begin
+            if (fw_valid[w] && (fw_tag[w] == {fw_ipAddr_pipe[BRAM_LATENCY+1], fw_udpPort_pipe[BRAM_LATENCY+1]})) begin
                 m00_axis_fw_lookup_hit          |= 1'b1;
-                m00_axis_fw_lookup_connectionId |= { w[WAYS_LOG-1:0], fw_hash_idx_pipe[BRAM_LATENCY] };
+                m00_axis_fw_lookup_connectionId |= { w[WAYS_LOG-1:0], fw_hash_idx_pipe[BRAM_LATENCY+1] };
             end
         end
     end
@@ -242,7 +247,7 @@ module connection_manager #(
                 .douta(ctrl_dout_tag[w]),
 
                 .clkb(s00_axis_fw_lookup_aclk), .rstb(!s00_axis_fw_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
-                .addrb(fw_hash_idx_pipe[0]),
+                .addrb(fw_hash_idx_pipe[1]),
                 .doutb(fw_tag[w])
             );
 
@@ -259,7 +264,7 @@ module connection_manager #(
                 .douta(ctrl_dout_valid[w]),
 
                 .clkb(s00_axis_fw_lookup_aclk), .rstb(!s00_axis_fw_lookup_aresetn), .enb(1'b1), .web(1'b0), .dinb('0),
-                .addrb(fw_hash_idx_pipe[0]),
+                .addrb(fw_hash_idx_pipe[1]),
                 .doutb(fw_valid[w])
             );
 

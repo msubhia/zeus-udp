@@ -74,11 +74,11 @@ module udp_engine_100g #(
     // ----------------------------------------------------------------
 
     // RX Channel
-//    input  wire [DATA_WIDTH  -1:0]              cmac_rx_axis_tdata,
-//    input  wire [DATA_WIDTH/8-1:0]              cmac_rx_axis_tkeep,
-//    input  wire                                 cmac_rx_axis_tvalid,
-//    input  wire                                 cmac_rx_axis_tlast,
-//    output logic                                cmac_rx_axis_tready,
+   input  wire [DATA_WIDTH  -1:0]              cmac_rx_axis_tdata,
+   input  wire [DATA_WIDTH/8-1:0]              cmac_rx_axis_tkeep,
+   input  wire                                 cmac_rx_axis_tvalid,
+   input  wire                                 cmac_rx_axis_tlast,
+   output logic                                cmac_rx_axis_tready,
 
     // TX Channel
     output logic [DATA_WIDTH  -1:0]             cmac_tx_axis_tdata,
@@ -99,11 +99,11 @@ module udp_engine_100g #(
     output logic                                udp_tx_axis_tready,
 
     // RX Channel
-//    output logic [DATA_WIDTH  -1:0]             udp_rx_axis_tdata,
-//    output logic [DATA_WIDTH/8-1:0]             udp_rx_axis_tkeep,
-//    output logic                                udp_rx_axis_tvalid,
-//    output logic                                udp_rx_axis_tlast,
-//    input  wire                                 udp_rx_axis_tready,
+   output logic [DATA_WIDTH  -1:0]             udp_rx_axis_tdata,
+   output logic [DATA_WIDTH/8-1:0]             udp_rx_axis_tkeep,
+   output logic                                udp_rx_axis_tvalid,
+   output logic                                udp_rx_axis_tlast,
+   input  wire                                 udp_rx_axis_tready,
 
     // ----------------------------------------------------------------
     // CONTROL INTERFACE (AXI-LITE)
@@ -444,20 +444,75 @@ module udp_engine_100g #(
         .udp_tx_axis_tvalid(udp_tx_axis_tvalid),
         .udp_tx_axis_tlast(udp_tx_axis_tlast),
 
-        .m01_axis_rv_lookup_valid(s01_axis_rv_lookup_valid),
+        .m01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
         .m01_axis_rv_lookup_connectionId(s01_axis_rv_lookup_connectionId),
-        .m01_axis_rv_lookup_ready(s01_axis_rv_lookup_ready),
-    
-        .s01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
-        .s01_axis_rv_lookup_valid(m01_axis_rv_lookup_valid),
+        .m01_axis_rv_lookup_ready(m01_axis_rv_lookup_ready),
+        .s01_axis_rv_lookup_ready(s01_axis_rv_lookup_ready),
+        .s01_axis_rv_lookup_valid(s01_axis_rv_lookup_valid),
         .s01_axis_rv_lookup_hit(m01_axis_rv_lookup_hit),
         .s01_axis_rv_lookup_ipAddr(m01_axis_rv_lookup_ipAddr),
         .s01_axis_rv_lookup_udpPort(m01_axis_rv_lookup_udpPort)
     );
+    
+   logic [DATA_WIDTH  -1:0]              cmac_rx_axis_tdatap;
+   logic [DATA_WIDTH/8-1:0]              cmac_rx_axis_tkeepp;
+   logic cmac_rx_axis_tvalidp;
+   logic                                 cmac_rx_axis_tlastp;
+   logic                                cmac_rx_axis_treadyp;
+   
+   always_ff @(posedge rx_axis_aclk) begin
+   cmac_rx_axis_tdatap <= cmac_rx_axis_tdata;
+   cmac_rx_axis_tkeepp <= cmac_rx_axis_tkeep;
+   cmac_rx_axis_tvalidp <= cmac_rx_axis_tvalid;
+   cmac_rx_axis_tlastp <= cmac_rx_axis_tlast;
+   cmac_rx_axis_tready <= cmac_rx_axis_treadyp; 
+   end
 
     // -------------------------------------------------------------------------
-    // UDP RX Engine (TODO)
+    // UDP RX Engine
     // -------------------------------------------------------------------------
+    ethernet_rx #(
+        .DATA_WIDTH(DATA_WIDTH),
+        .CONN_ID_WIDTH(CONN_ID_WIDTH),
+        .IP_UDP_DSCP(IP_UDP_DSCP),
+        .IP_UDP_ENC(IP_UDP_ENC),
+        .IP_UDP_IDEN(IP_UDP_IDEN),
+        .IP_UDP_FLAGS(IP_UDP_FLAGS),
+        .IP_UDP_FRAG_OFFSET(IP_UDP_FRAG_OFFSET),
+        .IP_UDP_TTL(IP_UDP_TTL)
+    ) ethernet_rx_unit (
+        .rx_axis_aclk(rx_axis_aclk),
+        .rx_axis_aresetn(rx_axis_aresetn),
+
+        .my_config_dst_ipAddr (tx_config_src_ipAddr),
+        .my_config_dst_macAddr(tx_config_src_macAddr),
+        .my_config_dst_udpPort(tx_config_src_udpPort),
+        .my_config_src_macAddr(tx_config_dst_macAddr),
+
+        // Slave port s00 from CMAC
+        .cmac_rx_axis_tready(cmac_rx_axis_treadyp),
+        .cmac_rx_axis_tdata (cmac_rx_axis_tdatap),
+        .cmac_rx_axis_tkeep (cmac_rx_axis_tkeepp),
+        .cmac_rx_axis_tvalid(cmac_rx_axis_tvalidp),
+        .cmac_rx_axis_tlast (cmac_rx_axis_tlastp),
+
+        // Master port m00 to user logic
+        .udp_rx_axis_tready(udp_rx_axis_tready),
+        .udp_rx_axis_tdata (udp_rx_axis_tdata),
+        .udp_rx_axis_tkeep (udp_rx_axis_tkeep),
+        .udp_rx_axis_tvalid(udp_rx_axis_tvalid),
+        .udp_rx_axis_tlast (udp_rx_axis_tlast),
+
+        .m01_axis_fw_lookup_valid(s00_axis_fw_lookup_valid),
+        .m01_axis_fw_lookup_ipAddr  (s00_axis_fw_lookup_ipAddr),
+        .m01_axis_fw_lookup_udpPort  (s00_axis_fw_lookup_udpPort),
+        .m01_axis_fw_lookup_ready(s00_axis_fw_lookup_ready),
+
+        .s01_axis_fw_lookup_ready(m00_axis_fw_lookup_ready),
+        .s01_axis_fw_lookup_valid(m00_axis_fw_lookup_valid),
+        .s01_axis_fw_lookup_hit(m00_axis_fw_lookup_hit),
+        .s01_axis_fw_lookup_connectionId(m00_axis_fw_lookup_connectionId)
+    );
 
 
 endmodule
