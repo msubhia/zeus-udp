@@ -112,17 +112,18 @@ module ethernet_rx #(
   logic                           length_check_fifo_tvalid;
   logic                           length_check_fifo_tdata;
 
+  logic                           header_valid_eager;
 
   logic cmac_rx_axis_treadyp, cmac_rx_axis_tlastp, cmac_rx_axis_tvalidp;
-  logic [DATA_WIDTH-1:0] cmac_rx_axis_tdata;
-  logic [DATA_WIDTH/8-1:0] cmac_rx_axis_tkeep;
-  
+  logic [  DATA_WIDTH-1:0] cmac_rx_axis_tdatap;
+  logic [DATA_WIDTH/8-1:0] cmac_rx_axis_tkeepp;
+
   always_ff @(posedge rx_axis_aclk) begin
-    cmac_rx_axis_tready <= cmac_rx_axis_treadyp;
-    cmac_rx_axis_tdata  <= cmac_rx_axis_tdata;
-    cmac_rx_axis_tkeep  <= cmac_rx_axis_tkeep;
-    cmac_rx_axis_tlastp <= cmac_rx_axis_tlast;
-    cmac_rx_axis_tvalidp <= cmac_rx_axis_tvalid  && header_valid_eager;
+    cmac_rx_axis_tready  <= cmac_rx_axis_treadyp;
+    cmac_rx_axis_tdatap  <= cmac_rx_axis_tdata;
+    cmac_rx_axis_tkeepp  <= cmac_rx_axis_tkeep;
+    cmac_rx_axis_tlastp  <= cmac_rx_axis_tlast;
+    cmac_rx_axis_tvalidp <= cmac_rx_axis_tvalid && header_valid_eager;
   end
 
 
@@ -136,7 +137,7 @@ module ethernet_rx #(
       .s_axis_tdata(cmac_rx_axis_tdatap),
       .s_axis_tkeep(cmac_rx_axis_tkeepp),
       .s_axis_tlast(cmac_rx_axis_tlastp),
-      .s_axis_tvalid(cmac_rx_axis_tvalidp /*& tx_engine_enable & (!tx_engine_bypass)*/),
+      .s_axis_tvalid(cmac_rx_axis_tvalidp  /*& tx_engine_enable & (!tx_engine_bypass)*/),
       .s_axis_tready(cmac_rx_axis_treadyp),  // should always be ready
 
       // output to payload processing signals
@@ -280,7 +281,6 @@ module ethernet_rx #(
 
 
   logic                              header_valid_reg;
-  logic                              header_valid_eager;
   // FSM for header validity
   // header_valid_reg rises on the first transaction if the header is valid
   // stays high until and including the tlast of the stream of incoming cmac_rx transactions
