@@ -303,6 +303,7 @@ module ethernet_rx #(
   always_ff @(posedge rx_axis_aclk) begin
     if (!rx_axis_aresetn) begin
       expected_udp_length            <= 'b0;
+      expected_udp_length_valid      <= 1'b0;
       expected_udp_length_post       <= 'b0;
       expected_udp_length_post_valid <= 1'b0;
     end else begin
@@ -376,12 +377,6 @@ module ethernet_rx #(
   // ==============================================================================================
   // Payload Generation
   // ==============================================================================================
-
-  logic                    to_checksum_tx_axis_tready;
-  logic [  DATA_WIDTH-1:0] to_checksum_tx_axis_tdata;
-  logic [DATA_WIDTH/8-1:0] to_checksum_tx_axis_tkeep;
-  logic                    to_checksum_tx_axis_tvalid;
-  logic                    to_checksum_tx_axis_tlast;
 
   rx_payload_constructor #(
       .DATA_WIDTH(DATA_WIDTH),
