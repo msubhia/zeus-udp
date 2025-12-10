@@ -216,8 +216,8 @@ def hash_fun_ip_port(ip, port):
 	"""
 	Bit-accurate Python version of the simplified XOR hash:
 
-		key  = {ip, port};  // 48 bits
-		hash = key[15:0] ^ key[31:16] ^ {8'b0, key[47:40]};
+			key  = {ip, port};  // 48 bits
+			hash = key[15:0] ^ key[31:16] ^ {8'b0, key[47:40]};
 	"""
 
 	# ------------------------------------------------------------
@@ -248,7 +248,7 @@ def generate_collision_entries(num_chains=5, chain_len=5):
 	"""
 	Returns a list of dictionaries.
 	Each dictionary looks like:
-					{ 'ip': <32-bit>, 'port': <16-bit> }
+									{ 'ip': <32-bit>, 'port': <16-bit> }
 
 	All IPs are unique. Each group of chain_len entries
 	shares the same xor32->16 hash.
@@ -577,7 +577,7 @@ def model_udp(
 		src_ipAddr = MY_CONFIG_DST_IP
 	else:
 		dst_ipAddr = MY_CONFIG_DST_IP
-   
+
 	ip_header = build_ipv4_header(
 		payload_length_bytes=payload_length_bytes,
 		src_ip=src_ipAddr,
@@ -598,8 +598,7 @@ def model_udp(
 		src_udpPort = MY_CONFIG_DST_PORT
 	else:
 		dst_udpPort = MY_CONFIG_DST_PORT
-  
- 
+
 	# ======================================================
 	# Build UDP Header
 	# ======================================================
@@ -726,7 +725,12 @@ async def reset(clk, rst, cycles_held=3, polarity=1):
 
 
 async def test_structure(
-	dut, NUM_TEST_PACKETS=100, WR_NUM_OPERATIONS=300, NUM_CHAINS=128, CHAIN_LEN=8, loopback_enable=0
+	dut,
+	NUM_TEST_PACKETS=100,
+	WR_NUM_OPERATIONS=300,
+	NUM_CHAINS=128,
+	CHAIN_LEN=8,
+	loopback_enable=0,
 ):
 
 	wr_in_monitor = AXIS_Monitor(
@@ -819,16 +823,16 @@ async def test_structure(
 		# print(
 		# 	f"packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}"
 		# )
-		beats, invalid_packet = model_udp(
-			connection_id,
-			payload_length_bytes,
-			payload,
-			MY_CONFIG_MAC,
-			MY_CONFIG_IP,
-			MY_CONFIG_PORT,
-			MY_CONFIG_SRC_MAC,
-			loopback_enable,
-		)
+		# beats, invalid_packet = model_udp(
+		#     connection_id,
+		#     payload_length_bytes,
+		#     payload,
+		#     MY_CONFIG_MAC,
+		#     MY_CONFIG_IP,
+		#     MY_CONFIG_PORT,
+		#     MY_CONFIG_SRC_MAC,
+		#     loopback_enable,
+		# )
 		# print(
 		#     f"modeled packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}, invalid={invalid_packet}"
 		# )
@@ -845,6 +849,7 @@ async def test_structure(
 			}
 		)
 		# dut._log.info(f"Sent UDP packet with connectionId={connection_id}, payload_length_bytes={payload_length_bytes}, invalid={invalid_packet}")
+		invalid_packet = False
 		model_udp_payload(
 			not invalid_packet, connection_id, payload, payload_length_bytes
 		)
@@ -901,10 +906,16 @@ async def test_1(dut):
 		dut, NUM_TEST_PACKETS=100, WR_NUM_OPERATIONS=10, NUM_CHAINS=128, CHAIN_LEN=8
 	)
 
+
 @cocotb.test()
 async def test_2(dut):
 	await test_structure(
-		dut, NUM_TEST_PACKETS=100, WR_NUM_OPERATIONS=10, NUM_CHAINS=128, CHAIN_LEN=8, loopback_enable=1
+		dut,
+		NUM_TEST_PACKETS=100,
+		WR_NUM_OPERATIONS=10,
+		NUM_CHAINS=128,
+		CHAIN_LEN=8,
+		loopback_enable=1,
 	)
 
 
@@ -940,14 +951,14 @@ def ethernet_rx_tb_runner():
 		proj_path / ".." / "hdl" / "pipeline.sv",
 		proj_path / ".." / "hdl" / "rx_payload_constructor.sv",
 		proj_path / ".." / "hdl" / "udp_engine_100g.sv",
-		proj_path / ".." / "hdl" / "ethernet_rx_wrapper.sv",
+		proj_path / ".." / "hdl" / "full_tx_rx_wrapper.sv",
 		proj_path / ".." / "hdl" / "zeus_rpc.svh",
 		"/tools/Xilinx/2025.1/Vivado/data/verilog/src/glbl.v",
 	]
 
 	build_test_args = ["-L", "xpm"]
 	parameters = {}
-	hdl_toplevel = "ethernet_rx_wrapper"
+	hdl_toplevel = "full_tx_rx_wrapper"
 
 	runner = get_runner(sim, extra_global_modules=["work.glbl"])
 	runner.build(

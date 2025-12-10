@@ -14,670 +14,960 @@ from pathlib import Path
 
 from cocotb.clock import Clock
 from cocotb.triggers import (
-    Timer,
-    ClockCycles,
-    RisingEdge,
-    FallingEdge,
-    ReadOnly,
-    ReadWrite,
-    with_timeout,
+	Timer,
+	ClockCycles,
+	RisingEdge,
+	FallingEdge,
+	ReadOnly,
+	with_timeout,
 )
 from cocotb.utils import get_sim_time as gst
-from cocotb.binary import BinaryValue
 
 # from cocotb.runner          import get_runner
-from cocotb.runner import get_runner
+from vicoco.vivado_runner import get_runner
 from cocotb_bus.bus import Bus
 from cocotb_bus.drivers import BusDriver
 from cocotb_bus.monitors import Monitor
 from cocotb_bus.monitors import BusMonitor
 from cocotb_bus.scoreboard import Scoreboard
-from scapy.all import Ether, IP, UDP, Raw
+from cocotb.binary import BinaryValue
 
 
-test_file = os.path.basename(__file__).replace(".py", "")
+import os
+
+# =====================================================================================================================================
+# COCOTB INFRA
+# =====================================================================================================================================
 
 
-########################################################################################################
-########################################################################################################
+def int_to_bytes(val: int, length, byteorder="big"):
+	return val.to_bytes(length, byteorder)
 
 
 class AXIS_Monitor(BusMonitor):
-    """
-    monitors axi streaming bus
-    """
+	"""
+	monitors axi streaming bus
+	"""
 
-    transactions = 0  # use this variable to track good ready/valid handshakes
+	transactions = 0  # use this variable to track good ready/valid handshakes
 
-    def __init__(self, dut, name, clk, callback=None):
-        self._signals = [
-            "axis_tvalid",
-            "axis_tready",
-            "axis_tlast",
-            "axis_tdata",
-            "axis_tkeep",
-        ]
-        BusMonitor.__init__(self, dut, name, clk, callback=callback)
-        self.clock = clk
-        self.transactions = 0
-        self.dut = dut
+	def __init__(self, dut, name, clk, callback=None):
+		self._signals = [
+			"axis_tvalid",
+			"axis_tready",
+			"axis_tlast",
+			"axis_tdata",
+			"axis_tstrb",
+		]
+		BusMonitor.__init__(self, dut, name, clk, callback=callback)
+		self.clock = clk
+		self.transactions = 0
+		self.dut = dut
 
-    async def _monitor_recv(self):
-        """
-        Monitor receiver
-        """
-        # make these coroutines once and reuse
-        rising_edge = RisingEdge(self.clock)
-        falling_edge = FallingEdge(self.clock)
-        read_only = ReadOnly()
+	async def _monitor_recv(self):
+		"""
+		Monitor receiver
+		"""
+		# make these coroutines once and reuse
+		rising_edge = RisingEdge(self.clock)
+		falling_edge = FallingEdge(self.clock)
+		read_only = ReadOnly()
 
-        while True:
-            # await rising_edge #can either wait for just edge...
-            # or you can also wait for falling edge/read_only (see note in lab)
+		while True:
+			# await rising_edge #can either wait for just edge...
+			# or you can also wait for falling edge/read_only (see note in lab)
 
-            await falling_edge  # sometimes see in AXI shit
-            await read_only  # readonly (the postline)
-            valid = self.bus.axis_tvalid.value
-            ready = self.bus.axis_tready.value
-            last = self.bus.axis_tlast.value
-            data = self.bus.axis_tdata.value  # .signed_integer
-            strb = self.bus.axis_tkeep.value
-            if valid and ready:
-                self.transactions += 1
-                thing = dict(
-                    data=data,
-                    strb=strb,
-                    last=last,
-                    name=self.name,
-                    count=self.transactions,
-                )
-                # self.dut._log.info(f"{self.name}: {self.transactions}")
-                self._recv(thing)
+			await falling_edge  # sometimes see in AXI shit
+			await read_only  # readonly (the postline)
+			valid = self.bus.axis_tvalid.value
+			ready = self.bus.axis_tready.value
+			last = self.bus.axis_tlast.value
+			data = self.bus.axis_tdata.value  # .signed_integer
+			if valid and ready:
+				self.transactions += 1
+				# thing = dict(
+				# 	data=hex(data.integer),
+				# 	last=last,
+				# 	name=self.name,
+				# 	count=self.transactions,
+				# )
+				# self.dut._log.info(f"{self.name}: {thing}")
 
-
-########################################################################################################
-########################################################################################################
+				tdata = int.from_bytes(self.bus.axis_tdata.value.buff, byteorder="big")
+				tkeep = int.from_bytes(self.bus.axis_tstrb.value.buff, byteorder="big")
+				tlast = int.from_bytes(self.bus.axis_tlast.value.buff, byteorder="big")
+				self._recv((tdata, tkeep, tlast))
 
 
 class AXIS_Driver(BusDriver):
-    def __init__(self, dut, name, clk, role="M"):
-        self._signals = [
-            "axis_tvalid",
-            "axis_tready",
-            "axis_tlast",
-            "axis_tdata",
-            "axis_tkeep",
-        ]
-        BusDriver.__init__(self, dut, name, clk)
-        self.clock = clk
-        self.dut = dut
+	def __init__(self, dut, name, clk, role="M"):
+		self._signals = [
+			"axis_tvalid",
+			"axis_tready",
+			"axis_tlast",
+			"axis_tdata",
+			"axis_tstrb",
+		]
+		BusDriver.__init__(self, dut, name, clk)
+		self.clock = clk
+		self.dut = dut
 
 
 class M_AXIS_Driver(AXIS_Driver):
-    def __init__(self, dut, name, clk):
-        super().__init__(dut, name, clk)
-        self.bus.axis_tdata.value = 0
-        self.bus.axis_tkeep.value = 0xF
-        self.bus.axis_tlast.value = 0
-        self.bus.axis_tvalid.value = 0
+	def __init__(self, dut, name, clk):
+		super().__init__(dut, name, clk)
+		self.bus.axis_tdata.value = 0
+		self.bus.axis_tstrb.value = 0
+		self.bus.axis_tlast.value = 0
+		self.bus.axis_tvalid.value = 0
 
-    async def _driver_send(self, value, sync=True):
-        rising_edge = RisingEdge(self.clock)  # make these coroutines once and reuse
-        falling_edge = FallingEdge(self.clock)
-        read_write = ReadWrite()
-        read_only = ReadOnly()  # This is
-        _type = value.get("type")
-        if _type == "pause":
-            await falling_edge
-            await read_write
-            self.bus.axis_tvalid.value = 0  # set to 0 and be done.
-            self.bus.axis_tlast.value = 0  # set to 0 and be done.
-            for i in range(value.get("duration", 1)):
-                await rising_edge
-        elif _type == "write_single":
-            contents = value["contents"]
-            # keep feeding as long as we don't have a transaction
-            await falling_edge
-            data = contents["data"]
-            self.bus.axis_tdata.value = data
-            self.bus.axis_tkeep.value = contents["strb"]
-            self.bus.axis_tlast.value = contents["last"]
-            self.bus.axis_tvalid.value = 1
-            while True:
-                await read_only
-                if self.bus.axis_tready.value == 1:
-                    # await falling_edge
-                    # await read_write
-                    # self.bus.axis_tvalid.value = 0
-                    # self.bus.axis_tlast.value = 0
-                    await rising_edge
-                    await read_only
-                    break
-                else:
-                    await rising_edge
+	async def _driver_send(self, value, sync=True):
 
-        elif _type == "write_burst":
-            contents = value["contents"]
-            # keep feeding as long as we don't have a transaction
-            data = contents["data"]
-            for i, entry in enumerate(data):
-                await self._driver_send(
-                    {
-                        "type": "write_single",
-                        "contents": {"data": int(entry), "last": i == len(data) - 1},
-                    }
-                )
+		# make these coroutines once and reuse
+		rising_edge = RisingEdge(self.clock)
+		falling_edge = FallingEdge(self.clock)
+		read_only = ReadOnly()
+
+		if value.get("type") == "pause":
+			await falling_edge
+			self.bus.axis_tvalid.value = 0
+			self.bus.axis_tlast.value = 0
+			for i in range(value.get("duration", 1)):
+				await rising_edge
+
+		elif value.get("type") == "write_single":
+			await falling_edge
+			self.bus.axis_tvalid.value = 1
+			self.bus.axis_tlast.value = value.get("contents").get("last")
+			self.bus.axis_tdata.value = int(value.get("contents").get("data"))
+			self.bus.axis_tstrb.value = 0xF
+			await read_only
+			while self.bus.axis_tready.value != 1:
+				await rising_edge
+
+		elif value.get("type") == "write_burst":
+
+			data_array = value.get("contents").get("data")
+			keep_array = value.get("contents").get("keep")
+
+			for i, d in enumerate(data_array):
+				# drive at falling edge of the clock
+				await falling_edge
+				self.bus.axis_tvalid.value = 1
+				self.bus.axis_tlast.value = 1 if (i == len(data_array) - 1) else 0
+				self.bus.axis_tdata.value = d
+				self.bus.axis_tstrb.value = keep_array[i]
+
+				# wait until the driven data has taken effect and
+				# check if the ready signal (entering the next raising edge) is on
+				await read_only
+
+				while self.bus.axis_tready.value != 1:
+					await rising_edge
+					# await read_only, adding this is wrong because we want to see if ready- was valid,
+					#                  not after the module reacts to our valid
+
+		else:
+			raise KeyError("invalid command type to master driver")
 
 
 class S_AXIS_Driver(BusDriver):
-    def __init__(self, dut, name, clk):
-        self._signals = [
-            "axis_tvalid",
-            "axis_tready",
-            "axis_tlast",
-            "axis_tdata",
-            "axis_tkeep",
-        ]
-        AXIS_Driver.__init__(self, dut, name, clk)
-        self.bus.axis_tready.value = 0
+	def __init__(self, dut, name, clk):
+		self._signals = [
+			"axis_tvalid",
+			"axis_tready",
+			"axis_tlast",
+			"axis_tdata",
+			"axis_tstrb",
+		]
+		AXIS_Driver.__init__(self, dut, name, clk)
+		self.bus.axis_tready.value = 0
 
-    async def _driver_send(self, value, sync=True):
-        rising_edge = RisingEdge(self.clock)  # make these coroutines once and reuse
-        falling_edge = FallingEdge(self.clock)
-        read_only = ReadOnly()  # This is
-        read_write = ReadWrite()  # This is
-        if value.get("type") == "pause":
-            await falling_edge
-            self.bus.axis_tready.value = 0  # set to 0 and be done.
-            for i in range(value.get("duration", 1)):
-                await rising_edge
-        elif value.get("type") == "read":
-            duration = value.get("duration")
-            count_beats = 0
-            await falling_edge
-            self.bus.axis_tready.value = 1
-            while True:
-                await read_only
-                if count_beats < duration:
-                    if self.bus.axis_tvalid.value == 1:
-                        count_beats += 1
-                    await rising_edge
-                else:
-                    await rising_edge
-                    self.bus.axis_tready.value = 0
-                    break
-        elif value.get("type") == "temp_read":
-            duration = value.get("duration")
-            count_beats = 0
-            await falling_edge
-            self.bus.axis_tready.value = 1
-            while True:
-                await read_only
-                if count_beats < duration:
-                    count_beats += 1
-                    await rising_edge
-                else:
-                    await rising_edge
-                    self.bus.axis_tready.value = 0
-                    break
+	async def _driver_send(self, value, sync=True):
+		rising_edge = RisingEdge(self.clock)  # make these coroutines once and reuse
+		falling_edge = FallingEdge(self.clock)
+		read_only = ReadOnly()  # This is
 
-        else:
-            raise Exception("Cannot happen")
+		if value.get("type") == "pause":
+			await falling_edge
+			self.bus.axis_tready.value = 0
+			for i in range(value.get("duration", 1)):
+				await rising_edge
+
+		elif value.get("type") == "read":
+
+			await falling_edge
+			self.bus.axis_tready.value = 1
+			# await read_only # this is useless here
+
+			for i in range(value.get("duration", 1)):
+				await rising_edge
+
+		else:
+			raise KeyError("invalid command type to slave driver")
 
 
-########################################################################################################
-########################################################################################################
+# =====================================================================================================================================
+# PYTHON MODEL (CONNECTION MANAGER)
+# =====================================================================================================================================
 
 
-########################################################################################################
-########################################################################################################
+def hash_fun_ip_port(ip, port):
+	"""
+	Bit-accurate Python version of the simplified XOR hash:
+
+		key  = {ip, port};  // 48 bits
+		hash = key[15:0] ^ key[31:16] ^ {8'b0, key[47:40]};
+	"""
+
+	# ------------------------------------------------------------
+	# 1. Construct 48-bit key = concat(ip[31:0], port[15:0])
+	# ------------------------------------------------------------
+	key = ((ip & 0xFFFFFFFF) << 16) | (port & 0xFFFF)
+	key &= (1 << 48) - 1  # keep 48 bits
+
+	# ------------------------------------------------------------
+	# 2. Extract pieces like SystemVerilog slices
+	# ------------------------------------------------------------
+	low_16 = (key >> 0) & 0xFFFF  # key[15:0]
+	mid_16 = (key >> 16) & 0xFFFF  # key[31:16]
+	top_8 = (key >> 40) & 0xFF  # key[47:40]
+
+	# Equivalent to {8'b0, key[47:40]}
+	top_16 = top_8  # zero-extended in top 8 bits
+
+	# ------------------------------------------------------------
+	# 3. XOR-fold into 16 bits
+	# ------------------------------------------------------------
+	hash16 = (low_16 ^ mid_16 ^ top_16) & 0xFFFF
+
+	return hash16
 
 
-def generate_packet(
-    src_mac, dst_mac, src_ip, dst_ip, src_port, dst_port, payload_byte_array
+def generate_collision_entries(num_chains=5, chain_len=5):
+	"""
+	Returns a list of dictionaries.
+	Each dictionary looks like:
+					{ 'ip': <32-bit>, 'port': <16-bit> }
+
+	All IPs are unique. Each group of chain_len entries
+	shares the same xor32->16 hash.
+	"""
+
+	result = []
+	used_ips = set()
+
+	for _ in range(num_chains):
+		target_hash = random.getrandbits(16)
+		chain = []
+
+		while len(chain) < chain_len:
+			ip = random.getrandbits(32)
+			port = random.getrandbits(16)
+			hash_v = hash_fun_ip_port(ip, port)
+			if hash_v == target_hash and (ip, port) not in used_ips:
+				entry = {
+					"ip": ip,
+					"port": port,
+				}
+
+				chain.append(entry)
+				used_ips.add((ip, port))
+
+		result.extend(chain)
+
+	return result
+
+
+WAYS = 4
+TABLE_SIZE = 2**16
+
+my_hash_table_vlds = [[0] * TABLE_SIZE for _ in range(WAYS)]
+my_hash_table_udpPort = [[0] * TABLE_SIZE for _ in range(WAYS)]
+my_hash_table_ipAddr = [[0] * TABLE_SIZE for _ in range(WAYS)]
+
+
+wr_sig_in = []
+wr_sig_out_exp = []
+wr_sig_out_act = []
+
+existing_connection_ids = []
+
+
+def connection_manager_model_wr(val):
+	val = val[0]
+	ipAddr = val & 0xFFFFFFFF
+	udpPort = (val >> 32) & 0xFFFF
+	bind = (val >> 48) & 0x1
+
+	hash_key = hash_fun_ip_port(ipAddr, udpPort)
+
+	wr_sig_in.append(
+		{"ipAddr": ipAddr, "udpPort": udpPort, "bind": bind, "hash_key": hash_key}
+	)
+
+	if bind:
+		inserted = False
+
+		# check if already exists
+		for w in range(WAYS):
+			if (
+				(my_hash_table_vlds[w][hash_key] == 1)
+				and (my_hash_table_ipAddr[w][hash_key] == ipAddr)
+				and (my_hash_table_udpPort[w][hash_key] == udpPort)
+			):
+				connectionId = (hash_key & 0xFFFF) | (w << 16)
+				wr_sig_out_exp.append(
+					{"ack": 1, "full": 0, "connectionId": connectionId}
+				)
+				return
+
+		for w in range(WAYS):
+			if my_hash_table_vlds[w][hash_key] == 0:
+				connectionId = (hash_key & 0xFFFF) | (w << 16)
+				my_hash_table_vlds[w][hash_key] = 1
+				my_hash_table_ipAddr[w][hash_key] = ipAddr
+				my_hash_table_udpPort[w][hash_key] = udpPort
+				inserted = True
+				break
+
+		if inserted:
+			existing_connection_ids.append(connectionId)
+
+		expected = {
+			"ack": 1,
+			"full": 0 if inserted else 1,
+			"connectionId": connectionId if inserted else 0,
+		}
+
+	else:
+		for w in range(WAYS):
+			if (
+				my_hash_table_vlds[w][hash_key]
+				and (my_hash_table_ipAddr[w][hash_key] == ipAddr)
+				and (my_hash_table_udpPort[w][hash_key] == udpPort)
+			):
+				my_hash_table_vlds[w][hash_key] = 0
+				my_hash_table_ipAddr[w][hash_key] = 0
+				my_hash_table_udpPort[w][hash_key] = 0
+		expected = {"ack": 1, "full": 0, "connectionId": 0}
+
+	wr_sig_out_exp.append(expected)
+
+
+def appending_values_wr(val):
+	val = val[0]
+	ack = (val >> 18) & 1
+	full = (val >> 19) & 1
+	connectionId = val & (0x3FFFF)
+
+	wr_sig_out_act.append({"ack": ack, "full": full, "connectionId": connectionId})
+
+
+# =====================================================================================================================================
+# PYTHON MODEL (UDP)
+# =====================================================================================================================================
+MY_CONFIG_SRC_MAC = random.getrandbits(48)
+MY_CONFIG_MAC = random.getrandbits(48)
+MY_CONFIG_IP = random.getrandbits(32)
+MY_CONFIG_PORT = random.getrandbits(16)
+
+IP_UDP_DSCP = 0
+IP_UDP_ENC = 0
+IP_UDP_IDEN = 0
+IP_UDP_FLAGS = 0
+IP_UDP_FRAG_OFFSET = 0
+IP_UDP_TTL = 64
+
+
+udp_sig_out_exp = []
+udp_sig_out_act = []
+
+
+def generate_random_packet(existing_connection_ids):
+	"""
+	Returns AXIS beats [(tdata, tkeep, tlast), ...]
+	tdata width = 544 bits  (512 payload + 32 connId in MSB of first beat only)
+	"""
+
+	# ------------------------------------------------------------
+	# 1. Generate packet length
+	# ------------------------------------------------------------
+	n = random.randint(0, 3)
+	mode = random.randint(0, 2)
+
+	if mode == 0:
+		base_len = random.randrange(8, 176, 8)
+	elif mode == 1:
+		base_len = 176
+	else:
+		base_len = random.randrange(184, 513, 8)
+
+	payload_length_bits = base_len + n * 512
+	assert payload_length_bits % 8 == 0
+	payload_length_bytes = payload_length_bits // 8
+
+	# ------------------------------------------------------------
+	# 2. Payload bytes (list of ints)
+	# ------------------------------------------------------------
+	payload = [random.getrandbits(8) for _ in range(payload_length_bytes)]
+
+	# ------------------------------------------------------------
+	# 3. Pick connectionId
+	# ------------------------------------------------------------
+	if existing_connection_ids and random.random() < 0.9:
+		connection_id = random.choice(existing_connection_ids)
+	else:
+		connection_id = random.getrandbits(18)
+
+	# Convert connectionId to 4 big-endian bytes
+	conn_bytes = [
+		(connection_id >> 24) & 0xFF,
+		(connection_id >> 16) & 0xFF,
+		(connection_id >> 8) & 0xFF,
+		(connection_id >> 0) & 0xFF,
+	]
+
+	# ------------------------------------------------------------
+	# 4. Slice payload into 64-byte beats
+	# ------------------------------------------------------------
+	BEAT_BYTES = 64
+	beats = []
+
+	total_beats = (payload_length_bytes + BEAT_BYTES - 1) // BEAT_BYTES
+
+	for beat_idx in range(total_beats):
+		start = beat_idx * BEAT_BYTES
+		end = min(start + BEAT_BYTES, payload_length_bytes)
+
+		chunk = payload[start:end]
+		chunk_len = len(chunk)
+
+		# ---- tdata assembly (little-endian inside beat) ----
+		tdata = 0
+
+		# LSBs = payload bytes (little-endian)
+		for i, b in enumerate(chunk):
+			tdata |= b << (8 * i)
+
+		# First beat: add connId in MSB 32 bits
+		if beat_idx == 0:
+			# shift payload up by 32 bytes? No — connId is above the payload.
+			tdata |= (
+				conn_bytes[3] << 512
+				| conn_bytes[2] << 520
+				| conn_bytes[1] << 528
+				| conn_bytes[0] << 536
+			)
+
+		# ---- tkeep assembly ----
+		# Total bytes = 64 payload + 4 connId = 68
+		# But connId valid only on beat 0
+		byte_count = chunk_len
+		tkeep = (1 << byte_count) - 1
+
+		# ---- tlast ----
+		tlast = beat_idx == total_beats - 1
+
+		beats.append((tdata, tkeep, tlast))
+
+	return beats, connection_id, payload_length_bytes, payload
+
+
+def swap_bytes(val, num_bytes):
+	out = 0
+	for i in range(num_bytes):
+		out = (out << 8) | ((val >> (8 * i)) & 0xFF)
+	return out
+
+
+def build_ipv4_header(
+	payload_length_bytes,
+	src_ip,
+	dst_ip,
+	dscp,
+	ecn,
+	identification,
+	flags,
+	frag_offset,
+	ttl,
+	protocol,
+	IP_HEADER_BYTES=20,
+	UDP_HEADER_BYTES=8,
 ):
-    pkt = (
-        Ether(dst=dst_mac, src=src_mac)
-        / IP(dst=dst_ip, src=src_ip)
-        / UDP(dport=dst_port, sport=src_port)
-        / Raw(load=bytes(payload_byte_array))
-    )
-    # binary
-    raw_bytes = bytes(pkt)
-    return raw_bytes
+
+	version_ihl = (4 << 4) | (IP_HEADER_BYTES // 4)
+	dscp_ecn = (dscp << 2) | ecn
+
+	# Total length = header + UDP + payload
+	total_len = payload_length_bytes + IP_HEADER_BYTES + UDP_HEADER_BYTES
+
+	# Flags (3 bits) + Fragment offset (13 bits)
+	flags_frag = ((flags & 0x7) << 13) | (frag_offset & 0x1FFF)
+
+	# Build header exactly in the same field order as the Verilog
+	ip_header = 0
+	ip_header |= version_ihl
+	ip_header |= dscp_ecn << 8
+	ip_header |= swap_bytes(total_len, 2) << 16
+	ip_header |= swap_bytes(identification, 2) << 32
+	ip_header |= swap_bytes(flags_frag, 2) << 48
+	ip_header |= ttl << 64
+	ip_header |= protocol << 72
+	ip_header |= 0 << 80
+	ip_header |= swap_bytes(src_ip, 4) << 96
+	ip_header |= swap_bytes(dst_ip, 4) << 128
+
+	return ip_header
 
 
-def construct_axis_frame(raw_bytes, randomized_strb=False):
-    # generator that yields AXIS transaction given the raw frame bytes
-    # can randomize the strb for all but the first 64-byte chunk if desired
-    frame_chunks = 0
-    while raw_bytes:
-        raw_frame_bits = BinaryValue(n_bits=512)
-        # set all bits to 0 initially
-        raw_frame_bits.assign(0)
-        frame_strb = BinaryValue(n_bits=512 // 8)
-        frame_strb.assign(0)
+# This was modified to include to artificially append the first 8 bytes to the payload
+def model_udp(
+	connection_id,
+	payload_length_bytes,
+	payload_bytes,
+	MY_CONFIG_DST_MAC,
+	MY_CONFIG_DST_IP,
+	MY_CONFIG_DST_PORT,
+	MY_CONFIG_SRC_MAC,
+	rx_internal_loopback,
+):
 
-        # fill the 512-bit frame with the first 64 bytes of the raw_bytes
-        # note: bit 0 = LSB of tdata[7:0]
-        # we need to map word bytes correctly (little-endian per word)
+	hash_key = connection_id & 0xFFFF
+	hash_way = connection_id >> 16
 
-        # frame chunks after the first one get randomized strb
-        i = 0
-        temp_byte_frame = []
-        while i < 64:
-            strb_randomization = (
-                random.choice([0, 1]) if randomized_strb and frame_chunks > 0 else 1
-            )
-            if strb_randomization == 1:
-                byte = raw_bytes[i] if i < len(raw_bytes) else 0
-                strb_randomization = 1 if i < len(raw_bytes) else 0
-                frame_strb[i] = strb_randomization
-                i += 1
-            else:
-                byte = random.randint(0, 255)
-                frame_strb[i] = strb_randomization
+	# # If not valid — drop packet
+	invalid = False
+	if my_hash_table_vlds[hash_way][hash_key] == 0:
+		# print("packet dropped by sw")
+		invalid = True
+	beats = []
 
-            temp_byte_frame.append(byte)
-        frame_chunks += 1
-        raw_frame_bits.buff = bytes(temp_byte_frame)
-        yield {
-            "data": raw_frame_bits,
-            "strb": frame_strb,
-            "last": 1 if len(raw_bytes) <= 64 else 0,
-        }
-        if len(raw_bytes) <= 64:
-            break
-        raw_bytes = raw_bytes[64:]  # move to the next 64 bytes
+	src_ipAddr = my_hash_table_ipAddr[hash_way][hash_key]
+	src_udpPort = my_hash_table_udpPort[hash_way][hash_key]
+
+	ETHTYPE_IP = 0x0800
+	IP_HEADER_BYTES = 20
+	UDP_HEADER_BYTES = 8
+	IPPROTO_UDP = 17
+
+	# ======================================================
+	# Build Ethernet Header (big-endian)
+	# ======================================================
+
+	if not rx_internal_loopback:
+		src_mac = MY_CONFIG_SRC_MAC
+		dst_mac = MY_CONFIG_DST_MAC
+	else:
+		src_mac = MY_CONFIG_DST_MAC
+		dst_mac = MY_CONFIG_SRC_MAC
+
+	ethernet_header = (
+		(swap_bytes(ETHTYPE_IP, 2) << (2 * 48))
+		| (swap_bytes(src_mac, 6) << 48)
+		| swap_bytes(dst_mac, 6)
+	)
+
+	# ======================================================
+	# Build IPv4 Header (exact RTL layout)
+	# ======================================================
+
+	if rx_internal_loopback:
+		dst_ipAddr = src_ipAddr
+		src_ipAddr = MY_CONFIG_DST_IP
+	else:
+		dst_ipAddr = MY_CONFIG_DST_IP
+   
+	ip_header = build_ipv4_header(
+		payload_length_bytes=payload_length_bytes,
+		src_ip=src_ipAddr,
+		dst_ip=dst_ipAddr,
+		dscp=IP_UDP_DSCP,
+		ecn=IP_UDP_ENC,
+		identification=IP_UDP_IDEN,
+		flags=IP_UDP_FLAGS,
+		frag_offset=IP_UDP_FRAG_OFFSET,
+		ttl=IP_UDP_TTL,
+		protocol=IPPROTO_UDP,
+		IP_HEADER_BYTES=IP_HEADER_BYTES,
+		UDP_HEADER_BYTES=UDP_HEADER_BYTES,
+	)
+
+	if rx_internal_loopback:
+		dst_udpPort = src_udpPort
+		src_udpPort = MY_CONFIG_DST_PORT
+	else:
+		dst_udpPort = MY_CONFIG_DST_PORT
+  
+ 
+	# ======================================================
+	# Build UDP Header
+	# ======================================================
+	udp_header = (
+		(swap_bytes(0, 2) << 48)
+		| (swap_bytes(payload_length_bytes + UDP_HEADER_BYTES, 2) << 32)
+		| (swap_bytes(dst_udpPort, 2) << 16)
+		| swap_bytes(src_udpPort, 2)  # checksum (unused in IPv4)
+	)
+
+	# ======================================================
+	# Combine headers: 14 + 20 + 8 = 42 bytes
+	# ======================================================
+	ALL_HDR_BYTES = 42
+	ALL_HDR_BITS = ALL_HDR_BYTES * 8
+
+	all_headers = (
+		(udp_header << (20 + 14) * 8) | (ip_header << (14 * 8)) | ethernet_header
+	)
+
+	# ======================================================
+	# Build FINAL PACKET = headers || payload
+	# ======================================================
+	full_packet_bytes = []
+
+	# append header bytes MSB → LSB
+	for i in range(ALL_HDR_BYTES):
+		full_packet_bytes.append((all_headers >> (8 * i)) & 0xFF)
+
+	# append payload (already LSB-first chunks)
+	full_packet_bytes.extend(payload_bytes)
+
+	# ======================================================
+	# Now resplit into AXIS beats (512-bit = 64 bytes)
+	# ======================================================
+	BEAT_BYTES = 64
+	num_beats = (len(full_packet_bytes) + BEAT_BYTES - 1) // BEAT_BYTES
+
+	drop_beat = random.randint(0, 100) < 50
+	for b in range(num_beats):
+		start = b * BEAT_BYTES
+		end = min(start + BEAT_BYTES, len(full_packet_bytes))
+		chunk = full_packet_bytes[start:end]
+
+		# Build tdata (LSB-first)
+		tdata = 0
+		for i, byte in enumerate(chunk):
+			tdata |= byte << (8 * i)
+
+		# tkeep
+		tkeep = (1 << len(chunk)) - 1
+
+		# last beat?
+		tlast = 1 if (b == num_beats - 1) else 0
+		if not tlast:
+			if drop_beat:
+				invalid = True
+				drop_beat = 0
+				continue
+		# # TODO: test against case with dropped beat
+
+		beats.append((tdata, tkeep, tlast))
+
+	return beats, invalid
 
 
-########################################################################################################
-########################################################################################################
+def model_udp_payload(is_valid, connection_id, payload_bytes, payload_length):
+	assert len(payload_bytes) == payload_length
+
+	combined_bytes = []
+
+	# --- FIXED: connection_id placed in LSB 4 bytes (little-endian) ---
+	for i in range(4):
+		combined_bytes.append((connection_id >> (8 * i)) & 0xFF)
+
+	# Next 6 bytes are zeros
+	combined_bytes.extend([0] * 4)
+
+	# Append payload
+	combined_bytes.extend(payload_bytes)
+
+	if not is_valid:
+		return  # No output beats
+
+	# Create 64-byte AXIS beats
+	idx = 0
+	total_len = len(combined_bytes)
+
+	while idx < total_len:
+		chunk = combined_bytes[idx : idx + 64]
+		tdata = 0
+
+		# Pack bytes into little-endian 512-bit word
+		for j, byte in enumerate(chunk):
+			tdata |= byte << (8 * j)
+
+		# tkeep = one bit per valid byte
+		tkeep = (1 << len(chunk)) - 1
+
+		# tlast = high only on final beat
+		tlast = 1 if (idx + len(chunk) >= total_len) else 0
+
+		udp_sig_out_exp.append((hex(tdata), hex(tkeep), hex(tlast)))
+
+		idx += 64
+
+
+def appending_values_udp(val):
+	d = val[0]
+	k = val[1]
+	l = val[2]
+	udp_sig_out_act.append((hex(d), hex(k), hex(l)))
+
+
+# =====================================================================================================================================
+# TESTING LOGIC
+# =====================================================================================================================================
 
 
 async def reset(clk, rst, cycles_held=3, polarity=1):
-    rst.value = polarity
-    await ClockCycles(clk, cycles_held)
-    rst.value = not polarity
+	rst.value = polarity
+	await ClockCycles(clk, cycles_held)
+	rst.value = not polarity
 
 
-########################################################################################################
-########################################################################################################
+async def test_structure(
+	dut, NUM_TEST_PACKETS=100, WR_NUM_OPERATIONS=300, NUM_CHAINS=128, CHAIN_LEN=8, loopback_enable=0
+):
 
-expected_packets = []
-current_eframe_bytes = bytearray()
+	wr_in_monitor = AXIS_Monitor(
+		dut, "s02", dut.s00_axis_aclk, callback=connection_manager_model_wr
+	)
+	wr_out_monitor = AXIS_Monitor(
+		dut, "m02", dut.s00_axis_aclk, callback=lambda x: appending_values_wr(x)
+	)
 
-actual_packets = []
-current_aframe_bytes = bytearray()
+	wr_in_driver = M_AXIS_Driver(dut, "s02", dut.s00_axis_aclk)
+	wr_out_driver = S_AXIS_Driver(dut, "m02", dut.s00_axis_aclk)
 
-expected_length_match = []
-actual_length_match = []
+	udp_in_monitor = AXIS_Monitor(
+		dut, "s00", dut.s00_axis_aclk, callback=lambda x: None
+	)
+	udp_out_monitor = AXIS_Monitor(
+		dut, "m00", dut.s00_axis_aclk, callback=lambda x: appending_values_udp(x)
+	)
 
+	udp_in_driver = M_AXIS_Driver(dut, "s00", dut.s00_axis_aclk)
+	udp_out_driver = S_AXIS_Driver(dut, "m00", dut.s00_axis_aclk)
 
-def packet_model(packet_transaction):
-    # reconstruct the byte version of a packet given an input transaction
-    global expected_packets
-    global current_eframe_bytes
-    data = packet_transaction["data"]
-    # split data into a byte array corresponding to strb
-    data = data.buff
-    strb = packet_transaction["strb"]
-    tlast = packet_transaction["last"]
+	cocotb.start_soon(Clock(dut.s00_axis_aclk, 10, units="ns").start())
+	await reset(dut.s00_axis_aclk, dut.s00_axis_aresetn, cycles_held=5, polarity=0)
+	dut.my_config_src_macAddr.value = MY_CONFIG_SRC_MAC
+	dut.my_config_dst_macAddr.value = MY_CONFIG_MAC
+	dut.my_config_dst_ipAddr.value = MY_CONFIG_IP
+	dut.my_config_dst_udpPort.value = MY_CONFIG_PORT
+	dut.rx_internal_loopback.value = loopback_enable
 
-    # condense all the bytes from tdata and tkeep
-    num_bytes = len(strb)
-    for i in range(num_bytes):
-        if strb[i]:
-            current_eframe_bytes.append(data[i])
+	await ClockCycles(dut.s00_axis_aclk, 3)
 
-    if tlast:
-        # construct a udp pck from the bytes and extract its payload
-        expected_packets.append(Ether(current_eframe_bytes)[UDP].payload)
-        current_eframe_bytes = bytearray()
+	#
+	# ----------------------------- MAIN TEST ----------------------------------
+	#
 
+	COLLISION_POOL = list(generate_collision_entries(NUM_CHAINS, CHAIN_LEN))
 
-def process_packet(packet, tlast_callback=None):
-    # reconstruct the byte version of a packet given an output transaction
-    global actual_packets
-    global current_aframe_bytes
-    data = packet["data"]
-    # split data into a byte array corresponding to strb
-    data = data.buff
-    strb = packet["strb"]
-    tlast = packet["last"]
+	async def writer_thread(num_operations):
 
-    # condense all the bytes from tdata and tkeep
-    num_bytes = len(strb)
-    for i in range(num_bytes):
-        if strb[i]:
-            current_aframe_bytes.append(data[i])
+		for _ in range(num_operations):
 
-    if tlast:
-        # construct a udp pck from the bytes and extract its payload
-        actual_packets.append(current_aframe_bytes)
-        current_aframe_bytes = bytearray()
-        if tlast_callback:
-            tlast_callback()
+			pick = random.choice(COLLISION_POOL)
+			bind = random.random() < 0.9
 
+			val = 0
+			val |= pick["ip"]
+			val |= pick["port"] << 32
+			val |= bind << 48
 
-########################################################################################################
-########################################################################################################
+			wr_in_driver.append(
+				{"type": "write_single", "contents": {"data": val, "last": 1}}
+			)
+			wr_in_driver.append({"type": "pause", "duration": random.randint(0, 3)})
 
+	#
+	# -------------------- Pre-fill connection manager -------------------------
+	#
+	cocotb.start_soon(writer_thread(WR_NUM_OPERATIONS))
+	wr_out_driver.append({"type": "read", "duration": WR_NUM_OPERATIONS + 1000})
+	await ClockCycles(dut.s00_axis_aclk, WR_NUM_OPERATIONS + 1000)
 
-# @cocotb.test()
-async def ethernet_rx_basic_test(dut):
-    """Basic test for ethernet_rx module"""
+	assert (
+		wr_in_monitor.transactions == wr_out_monitor.transactions
+	), f"WR transaction count mismatch!"
+	assert (
+		len(wr_sig_in) == len(wr_sig_out_exp) == len(wr_sig_out_act)
+	), "WR bookkeeping mismatch!"
+	for idx, (sig_in, expected, actual) in enumerate(
+		zip(wr_sig_in, wr_sig_out_exp, wr_sig_out_act)
+	):
+		if expected != actual:
+			raise RuntimeError(
+				f"ERROR:    WR mismatch {idx}: ipAddr=0x{hex(sig_in['ipAddr'])} "
+				f"hash=0x{hex(sig_in['hash_key'])} "
+				f"bind={sig_in['bind']}"
+				f"expected {expected}, got {actual}"
+			)
 
-    # setup clock
-    clock = Clock(dut.aclk, 4, units="ns")  # 250MHz
-    cocotb.start_soon(clock.start())
+	#
+	# ------------------------------- UDP Packets  ---------------------------------
+	#
 
-    # reset
-    await reset(dut.aclk, dut.aresetn, cycles_held=10, polarity=0)
+	valid_packets = 0
+	for _ in range(NUM_TEST_PACKETS):
+		beats, connection_id, payload_length_bytes, payload = generate_random_packet(
+			existing_connection_ids
+		)
+		# dut._log.info(f"Generated UDP packet with connectionId={connection_id}, payload_length_bytes={payload_length_bytes}")
+		# print(
+		# 	f"packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}"
+		# )
+		beats, invalid_packet = model_udp(
+			connection_id,
+			payload_length_bytes,
+			payload,
+			MY_CONFIG_MAC,
+			MY_CONFIG_IP,
+			MY_CONFIG_PORT,
+			MY_CONFIG_SRC_MAC,
+			loopback_enable,
+		)
+		# print(
+		#     f"modeled packet with payload bytes length = {payload_length_bytes}, connectionId = {connection_id}, invalid={invalid_packet}"
+		# )
+		# print(f"  num beats = {len(beats)}")
 
-    dut._log.info("Reset complete")
-    # my config struct definition
-    # typedef struct packed {
-    #   logic [MAC_ADDR_SIZE-1:0] mac_addr;
-    #   logic [31:0]              ip_addr;
-    #   logic [15:0]              port;
-    # } connection_config_t;
+		# TODO: randomize and break up the writes for a single packet to interleave with different length pauses
+		udp_in_driver.append(
+			{
+				"type": "write_burst",
+				"contents": {
+					"data": [tdata for (tdata, tkeep, tlast) in beats],
+					"keep": [tkeep for (tdata, tkeep, tlast) in beats],
+				},
+			}
+		)
+		# dut._log.info(f"Sent UDP packet with connectionId={connection_id}, payload_length_bytes={payload_length_bytes}, invalid={invalid_packet}")
+		model_udp_payload(
+			not invalid_packet, connection_id, payload, payload_length_bytes
+		)
+		if not invalid_packet:
+			valid_packets += 1
 
-    config_raw_binary = BinaryValue(n_bits=48 + 32 + 16)
-    config_raw_binary.buff = (
-        b"\x11\x22\x33\x44\x55\x66" + b"\xc0\xa8\x01\x65" + b"\x00\x35"
-    )
-    dut.my_config.value = config_raw_binary
+		if random.random() < 0.1:
+			continue
+		udp_in_driver.append({"type": "pause", "duration": random.randint(0, 10)})
 
-    def dut_tlast_callback():
-        # checking that at the tlast cycle the length check is passing
-        assert dut.m_axis_length_valid.value, "Length check failed at tlast"
-        dut._log.info("Received packet!")
+	udp_in_driver.append({"type": "pause", "duration": 5})
+	udp_out_driver.append({"type": "read", "duration": NUM_TEST_PACKETS * 10})
+	await ClockCycles(dut.s00_axis_aclk, NUM_TEST_PACKETS * 10)
 
-    # establish monitors on AXIS channels
-    inm = AXIS_Monitor(dut, "s", dut.aclk, callback=packet_model)
-    outm = AXIS_Monitor(
-        dut,
-        "m",
-        dut.aclk,
-        callback=lambda x: process_packet(
-            x,
-        ),
-    )
+	#
+	# ------------------------------- Validation  ---------------------------------
+	#
 
-    dut.m_axis_tready.value = 1  # always ready
+	# dut._log.info(f"UDP expected count: {len(udp_sig_out_exp)}")
+	# dut._log.info(f"UDP actual count:   {len(udp_sig_out_act)}")
+	# dut._log.info(f"Valid packets sent: {valid_packets}")
+	# dut._log.info("All expected UDP outputs:")
+	# for j, v in enumerate(udp_sig_out_exp):
+	#     dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
+	# dut._log.info("All actual UDP outputs:")
+	# for j, v in enumerate(udp_sig_out_act):
+	#     dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
+	assert len(udp_sig_out_exp) == len(
+		udp_sig_out_act
+	), f"UDP count mismatch! len(udp_sig_out_exp) = {len(udp_sig_out_exp)}, len(udp_sig_out_act) = {len(udp_sig_out_act)}"
 
-    # establish drivers on AXIS channels
-    s_axis_driver = M_AXIS_Driver(dut, "s", dut.aclk)
-    # m_axis_driver = M_AXIS_Driver(dut, "m", dut.aclk)
+	for i, (exp, act) in enumerate(zip(udp_sig_out_exp, udp_sig_out_act)):
+		if exp != act:
+			# for j, v in enumerate(udp_sig_out_exp):
+			#     dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
+			# dut._log.info("All actual UDP outputs:")
+			# for j, v in enumerate(udp_sig_out_act):
+			#     dut._log.info(f"  [{j}]: {v}, byte len = {len(v[0])//2 - 1}")
+			raise RuntimeError(f"UDP mismatch at beat {i}: expected {exp}, got {act}")
+		# dut._log.info(f"UDP beat {i} matched: {exp}")
 
-    # feed in a dummy input in the following shape
-    # // Ethernet Frame:
-    # // tdata[ 7:0]   = 0x11   // Dest MAC byte 0
-    # // tdata[15:8]   = 0x22
-    # // tdata[23:16]  = 0x33
-    # // tdata[31:24]  = 0x44
-    # // tdata[39:32]  = 0x55
-    # // tdata[47:40]  = 0x66
-
-    # // tdata[55:48]  = 0xAA   // Src MAC byte 0
-    # // tdata[63:56]  = 0xBB
-    # // tdata[71:64]  = 0xCC
-    # // tdata[79:72]  = 0xDD
-    # // tdata[87:80]  = 0xEE
-    # // tdata[95:88]  = 0xFF
-
-    # // tdata[103:96] = 0x08   // Ethertype byte 0
-    # // tdata[111:104]= 0x00
-    # // tdata[119:112]= 0x45   // IP Version, IHL, TOS
-    # // tdata[127:120]= 0x00
-    # // tdata[135:128]= 0x00   // Total Length byte 0
-    # // tdata[143:136]= 0x2C
-    # // tdata[151:144]= 0x1C   // Identification byte 0
-    # // tdata[159:152]= 0x46
-    # // tdata[167:160]= 0x40   // Flags, Fragment Offset
-    # // tdata[175:168]= 0x00
-    # // tdata[183:176]= 0x40   // TTL
-    # // tdata[191:184]= 0x11
-    # // tdata[199:192]= 0xB1   // Header Checksum
-    # // tdata[207:200]= 0xE6
-    # // tdata[215:208]= 0xC0   // Src IP byte
-    # // tdata[223:216]= 0xA8
-    # // tdata[231:224]= 0x01
-    # // tdata[239:232]= 0x64
-    # // tdata[247:240]= 0xC0   // Dest IP byte
-    # // tdata[255:248]= 0xA8
-    # // tdata[263:256]= 0x01
-    # // tdata[271:264]= 0x65
-    # // tdata[279:272]= 0x04   // Src Port byte 0
-    # // tdata[287:280]= 0xD2
-    # // tdata[295:288]= 0x00   // Dest Port byte
-    # // tdata[303:296]= 0x35
-    # // tdata[311:304]= 0x00   // UDP Length byte
-    # // tdata[319:312]= 0x18
-    # // tdata[327:320]= 0x00   // UDP Checksum byte
-    # // tdata[335:328]= 0x00
-    # // tdata[343:336]= 0xDE   // UDP Payload byte
-    # // tdata[351:344]= 0xAD
-    # .....
-
-    # construct a raw udp packet with a payload of size 10 bytes and make sure the strb accounts for that
-    N = 100
-    for i in range(N):
-        random_payload = []
-        payload_size = random.randint(1, 1000)
-        for j in range(payload_size):
-            random_payload.append(random.randint(0, 255))
-
-        payload_bytes = bytes(random_payload)
-
-        frame_transaction_gen = construct_axis_frame(
-            generate_packet(
-                src_mac="AA:BB:CC:DD:EE:FF",
-                dst_mac="11:22:33:44:55:66",
-                src_ip="192.168.1.100",
-                dst_ip="192.168.1.101",
-                src_port=1234,
-                dst_port=53,
-                payload_byte_array=payload_bytes,
-            )
-        )
-        for transaction in frame_transaction_gen:
-            # send the test frame
-            s_axis_driver.append(
-                {
-                    "type": "write_single",
-                    "contents": transaction,
-                }
-            )
-            if random.choice([0, 1, 2]) == 0:
-                s_axis_driver.append(
-                    {"type": "pause", "duration": random.randint(1, 10)}
-                )
-    s_axis_driver.append({"type": "pause", "duration": 100})
-
-    await ClockCycles(dut.aclk, 10000)
-    print(f"Expected packets: {len(expected_packets)}")
-    print(f"Actual packets: {len(actual_packets)}")
-    for i in range(len(expected_packets)):
-        exp_payload = bytes(expected_packets[i])
-        act_payload = bytes(actual_packets[i])
-        # dut._log.info(f"Expected packet {i}: {exp_payload.hex()}")
-        # dut._log.info(f"Actual packet {i}:   {act_payload.hex()}")
-        assert exp_payload == act_payload, f"Packet {i} payload mismatch"
+	udp_sig_out_exp.clear()
+	udp_sig_out_act.clear()
 
 
-########################################################################################################
-########################################################################################################
+# =====================================================================================================================================
+# TEST CASES
+# =====================================================================================================================================
 
 
 @cocotb.test()
-async def test_with_packets_length_mismatch(dut):
-    """Basic test for ethernet_rx module"""
+async def test_1(dut):
+	await test_structure(
+		dut, NUM_TEST_PACKETS=100, WR_NUM_OPERATIONS=10, NUM_CHAINS=128, CHAIN_LEN=8
+	)
 
-    # setup clock
-    clock = Clock(dut.aclk, 4, units="ns")  # 250MHz
-    cocotb.start_soon(clock.start())
-
-    global expected_packets
-    global actual_packets
-    expected_packets = []
-    actual_packets = []
-
-    global expected_length_match
-    global actual_length_match
-    expected_length_match = []
-    actual_length_match = []
-
-    # reset
-    await reset(dut.aclk, dut.aresetn, cycles_held=10, polarity=0)
-
-    dut._log.info("Reset complete")
-    # my config struct definition
-    # typedef struct packed {
-    #   logic [MAC_ADDR_SIZE-1:0] mac_addr;
-    #   logic [31:0]              ip_addr;
-    #   logic [15:0]              port;
-    # } connection_config_t;
-
-    config_raw_binary = BinaryValue(n_bits=48 + 32 + 16)
-    config_raw_binary.buff = (
-        b"\x11\x22\x33\x44\x55\x66" + b"\xc0\xa8\x01\x65" + b"\x00\x35"
-    )
-    dut.my_config.value = config_raw_binary
-
-    def dut_tlast_callback():
-        # checking that at the tlast cycle the length check is passing
-        # assert dut.m_axis_length_valid.value, "Length check failed at tlast"
-        actual_length_match.append(int(dut.m_axis_length_valid.value))
-        dut._log.info("Received packet!")
-
-    # establish monitors on AXIS channels
-    inm = AXIS_Monitor(dut, "s", dut.aclk, callback=packet_model)
-    outm = AXIS_Monitor(
-        dut,
-        "m",
-        dut.aclk,
-        callback=lambda x: process_packet(x, dut_tlast_callback),
-    )
-
-    dut.m_axis_tready.value = 1  # always ready
-
-    # establish drivers on AXIS channels
-    s_axis_driver = M_AXIS_Driver(dut, "s", dut.aclk)
-
-    # construct a raw udp packet with a payload of size 10 bytes and make sure the strb accounts for that
-    payload_intended_sizes = []
-    N = 11
-    for k in range(2):
-        for i in range(N):
-            random_payload = []
-            payload_size = random.randint(100, 1000)
-            payload_intended_sizes.append(payload_size)
-            for j in range(payload_size):
-                random_payload.append(random.randint(0, 255))
-
-            payload_bytes = bytes(random_payload)
-
-            frame_transaction_gen = construct_axis_frame(
-                generate_packet(
-                    src_mac="AA:BB:CC:DD:EE:FF",
-                    dst_mac="11:22:33:44:55:66",
-                    src_ip="192.168.1.100",
-                    dst_ip="192.168.1.101",
-                    src_port=1234,
-                    dst_port=53,
-                    payload_byte_array=payload_bytes,
-                )
-            )
-            actually_dropped = 0
-            drop_transaction = random.choice([0, 1])
-            transactions = list(frame_transaction_gen)
-            for i, transaction in enumerate(transactions):
-                if i != 0 and i != len(transactions) - 1 and drop_transaction:
-                    drop_transaction = 0
-                    actually_dropped = 1
-                    continue
-                # send the test frame
-                # ensure we're not dropping tlast or first
-                s_axis_driver.append(
-                    {
-                        "type": "write_single",
-                        "contents": transaction,
-                    }
-                )
-                if random.choice([0, 1, 2]) == 0:
-                    # if 0:
-                    s_axis_driver.append(
-                        {"type": "pause", "duration": random.randint(1, 10)}
-                    )
-
-                expected_length_match.append(int(not actually_dropped))
-
-    s_axis_driver.append({"type": "pause", "duration": 100})
-
-    await ClockCycles(dut.aclk, 10000)
-    print(f"Expected packets: {len(expected_packets)}")
-    print(f"Actual packets: {len(actual_packets)}")
-    for i in range(len(expected_packets)):
-        exp_payload = bytes(expected_packets[i])
-        act_payload = bytes(actual_packets[i])
-        # dut._log.info(f"Expected packet {i}: {exp_payload.hex()}")
-        # dut._log.info(f"Actual packet {i}:   {act_payload.hex()}")
-
-        dut._log.info(
-            f"Packet {i} expected length: {len(exp_payload)}, actual length: {len(act_payload)}"
-        )
-        if actual_length_match[i] != (payload_intended_sizes[i] == len(act_payload)):
-            dut._log.error(
-                f"Length match flag mismatch for packet {i}: expected {expected_length_match[i]}, actual {actual_length_match[i]}"
-            )
-            dut._log.error(f"Payload intended size: {payload_intended_sizes[i]}")
-        assert exp_payload == act_payload, f"Packet {i} payload mismatch"
+@cocotb.test()
+async def test_2(dut):
+	await test_structure(
+		dut, NUM_TEST_PACKETS=100, WR_NUM_OPERATIONS=10, NUM_CHAINS=128, CHAIN_LEN=8, loopback_enable=1
+	)
 
 
-########################################################################################################
-########################################################################################################
+# conditions for consuming from packet fifo:
+# in IDLE state: all fifos valid, packet valid, payload_reg valid
+# in transfer state: payload fifo valid, payload reg valid
+# in IDLE state: !payload reg valid, all fifos valid, packet valid, payload fifo tlast
+# in transfer state: payload reg valid, !payload reg full
+# in transfer state: !payload reg valid
+# in transfer state
+
+
+# =====================================================================================================================================
+# TEST RUNNER
+# =====================================================================================================================================
 
 
 def ethernet_rx_tb_runner():
 
-    hdl_toplevel_lang = os.getenv("HDL_TOPLEVEL_LANG", "verilog")
-    sim = os.getenv("SIM", "icarus")
-    proj_path = Path(__file__).resolve().parent.parent
-    sys.path.append(str(proj_path / "sim" / "model"))
-    sys.path.append(str(proj_path / "hdl"))
-    sys.path.append(str(proj_path / "sim"))
+	hdl_toplevel_lang = os.getenv("HDL_TOPLEVEL_LANG", "verilog")
+	# sim = os.getenv("SIM", "icarus")
+	sim = os.getenv("SIM", "vivado")
+	test_file = os.path.basename(__file__).replace(".py", "")
+	proj_path = Path(__file__).resolve().parent
 
-    sources = [
-        proj_path / "hdl" / "ethernet_rx.sv",
-        proj_path / "hdl" / "zeus_rpc.svh",
-        proj_path / "hdl" / "pipeline.sv",
-        proj_path / "hdl" / "connection_manager.sv",
-        proj_path / "hdl" / "bram_wrapper.sv",
-    ]
-    build_test_args = ["-Wall", f"-I{proj_path / 'hdl'}"]
-    parameters = {}
-    hdl_toplevel = "ethernet_rx"
+	sys.path.append(str(proj_path / "model"))
 
-    runner = get_runner(sim)
-    runner.build(
-        sources=sources,
-        hdl_toplevel=hdl_toplevel,
-        always=True,
-        build_args=build_test_args,
-        parameters=parameters,
-        timescale=("1ns", "1ps"),
-        waves=True,
-    )
-    run_test_args = []
-    runner.test(
-        hdl_toplevel=hdl_toplevel,
-        test_module=test_file,
-        test_args=run_test_args,
-        waves=True,
-    )
+	sources = [
+		proj_path / ".." / "hdl" / "connection_manager.sv",
+		proj_path / ".." / "hdl" / "bram_wrapper.sv",
+		proj_path / ".." / "hdl" / "fifo_axis_wrapper.sv",
+		proj_path / ".." / "hdl" / "ethernet_rx.sv",
+		proj_path / ".." / "hdl" / "pipeline.sv",
+		proj_path / ".." / "hdl" / "rx_payload_constructor.sv",
+		proj_path / ".." / "hdl" / "udp_engine_100g.sv",
+		proj_path / ".." / "hdl" / "ethernet_rx_wrapper.sv",
+		proj_path / ".." / "hdl" / "zeus_rpc.svh",
+		"/tools/Xilinx/2025.1/Vivado/data/verilog/src/glbl.v",
+	]
+
+	build_test_args = ["-L", "xpm"]
+	parameters = {}
+	hdl_toplevel = "ethernet_rx_wrapper"
+
+	runner = get_runner(sim, extra_global_modules=["work.glbl"])
+	runner.build(
+		sources=sources,
+		hdl_toplevel=hdl_toplevel,
+		always=True,
+		build_args=build_test_args,
+		parameters=parameters,
+		timescale=("1ns", "1ps"),
+		includes=[proj_path / ".." / "hdl"],
+		waves=True,
+	)
+	run_test_args = []
+	runner.test(
+		hdl_toplevel=hdl_toplevel,
+		test_module=test_file,
+		test_args=run_test_args,
+		waves=True,
+	)
 
 
 if __name__ == "__main__":
-    ethernet_rx_tb_runner()
+	ethernet_rx_tb_runner()
