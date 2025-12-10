@@ -340,6 +340,17 @@ class udp_engine_controller:
         old &= ~1
         self._write_confirmed(self.addr_csr_udp_engine_100g__ctrl, old)
 
+
+    def rx_internal_loopback_enable(self):
+        old = self.udp_mmio.read(self.addr_csr_udp_engine_100g__ctrl)
+        old |= (1<<3)
+        self._write_confirmed(self.addr_csr_udp_engine_100g__ctrl, old)
+
+    def rx_internal_loopback_disable(self):
+        old = self.udp_mmio.read(self.addr_csr_udp_engine_100g__ctrl)
+        old &= (~(1<<3))
+        self._write_confirmed(self.addr_csr_udp_engine_100g__ctrl, old)
+
     def configure(self, src_macAddr, src_ipAddr, src_udpPort, dst_macAddr):
         """
         Configure the UDP engine with source and destination network parameters.
