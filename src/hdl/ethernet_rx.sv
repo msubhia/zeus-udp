@@ -1,6 +1,7 @@
 `default_nettype none `timescale 1ns / 1ps
 
 `include "zeus_rpc.svh"
+`include "udp_engine_100g.svh"
 
 // ============================================================================
 // Ethernet RX IP
@@ -190,10 +191,13 @@ module ethernet_rx #(
     end
   end
 
+
   // ----------------------------------------------------------------------------------------------
   // Header Parsing and Validation
   // ----------------------------------------------------------------------------------------------
   header_t full_header;
+  header_t full_header_reversed;
+  header_t full_header_normal;
   // little endian to big endian conversion to correctly parse packet headers from CMAC in network order
   logic [DATA_WIDTH-1:0] cmac_rx_axis_tdata_be;
   logic
@@ -212,7 +216,35 @@ module ethernet_rx #(
     end
   endgenerate
 
-  assign full_header = cmac_rx_axis_tdata_be;
+  assign full_header_normal                         = cmac_rx_axis_tdata_be;
+  assign full_header_reversed.eth_hdr.dst_mac       = full_header_normal.eth_hdr.src_mac;
+  assign full_header_reversed.eth_hdr.src_mac       = full_header_normal.eth_hdr.dst_mac;
+  assign full_header_reversed.eth_hdr.eth_type      = full_header_normal.eth_hdr.eth_type;
+  assign full_header_reversed.ip_hdr.version        = full_header_normal.ip_hdr.version;
+  assign full_header_reversed.ip_hdr.header_length  = full_header_normal.ip_hdr.header_length;
+  assign full_header_reversed.ip_hdr.dscp           = full_header_normal.ip_hdr.dscp;
+  assign full_header_reversed.ip_hdr.ecn            = full_header_normal.ip_hdr.ecn;
+  assign full_header_reversed.ip_hdr.total_length   = full_header_normal.ip_hdr.total_length;
+  assign full_header_reversed.ip_hdr.identification = full_header_normal.ip_hdr.identification;
+  assign full_header_reversed.ip_hdr.flags          = full_header_normal.ip_hdr.flags;
+  assign full_header_reversed.ip_hdr.frag_offset    = full_header_normal.ip_hdr.frag_offset;
+  assign full_header_reversed.ip_hdr.ttl            = full_header_normal.ip_hdr.ttl;
+  assign full_header_reversed.ip_hdr.protocol       = full_header_normal.ip_hdr.protocol;
+  assign full_header_reversed.ip_hdr.hdr_checksum   = full_header_normal.ip_hdr.hdr_checksum;
+  assign full_header_reversed.ip_hdr.src_ip         = full_header_normal.ip_hdr.dst_ip;
+  assign full_header_reversed.ip_hdr.dst_ip         = full_header_normal.ip_hdr.src_ip;
+  assign full_header_reversed.udp_hdr.src_port      = full_header_normal.udp_hdr.dst_port;
+  assign full_header_reversed.udp_hdr.dst_port      = full_header_normal.udp_hdr.src_port;
+  assign full_header_reversed.udp_hdr.length        = full_header_normal.udp_hdr.length;
+  assign full_header_reversed.udp_hdr.checksum      = full_header_normal.udp_hdr.checksum;
+
+  always_comb begin
+    if (rx_internal_loopback) begin
+      full_header = full_header_reversed;
+    end else begin
+      full_header = full_header_normal;
+    end
+  end
 
   logic [15:0] udp_rx_axis_length;
   assign udp_rx_axis_length = full_header.udp_hdr.length - (UDP_HEADER_BYTES);

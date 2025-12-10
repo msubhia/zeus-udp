@@ -23,6 +23,7 @@ module ethernet_rx_wrapper #(
     localparam int MAC_ADDR_WIDTH = 48,
     localparam int UDP_PORT_WIDTH = 16
 ) (
+    input wire        rx_internal_loopback,
     input wire [31:0] my_config_dst_ipAddr,
     input wire [47:0] my_config_dst_macAddr,
     input wire [15:0] my_config_dst_udpPort,
@@ -87,7 +88,7 @@ module ethernet_rx_wrapper #(
       .s00_axis_fw_lookup_aresetn(s00_axis_aresetn),
       .s00_axis_fw_lookup_valid(s01_axis_fw_lookup_valid),
       .s00_axis_fw_lookup_ipAddr(s01_axis_fw_lookup_ipAddr),
-	  .s00_axis_fw_lookup_udpPort(s01_axis_fw_lookup_udpPort),
+      .s00_axis_fw_lookup_udpPort(s01_axis_fw_lookup_udpPort),
       .s00_axis_fw_lookup_ready(s01_axis_fw_lookup_ready),
 
       .m00_axis_fw_lookup_ready(m01_axis_fw_lookup_ready),
@@ -116,16 +117,11 @@ module ethernet_rx_wrapper #(
 
   ethernet_rx #(
       .DATA_WIDTH(DATA_WIDTH),
-      .CONN_ID_WIDTH(CONN_ID_WIDTH),
-      .IP_UDP_DSCP(IP_UDP_DSCP),
-      .IP_UDP_ENC(IP_UDP_ENC),
-      .IP_UDP_IDEN(IP_UDP_IDEN),
-      .IP_UDP_FLAGS(IP_UDP_FLAGS),
-      .IP_UDP_FRAG_OFFSET(IP_UDP_FRAG_OFFSET),
-      .IP_UDP_TTL(IP_UDP_TTL)
+      .CONN_ID_WIDTH(CONN_ID_WIDTH)
   ) ethernet_rx_unit (
       .rx_axis_aclk(s00_axis_aclk),
       .rx_axis_aresetn(s00_axis_aresetn),
+      .rx_internal_loopback(rx_internal_loopback),
 
       .my_config_dst_ipAddr (my_config_dst_ipAddr),
       .my_config_dst_macAddr(my_config_dst_macAddr),
@@ -146,10 +142,10 @@ module ethernet_rx_wrapper #(
       .udp_rx_axis_tvalid(m00_axis_tvalid),
       .udp_rx_axis_tlast (m00_axis_tlast),
 
-      .m01_axis_fw_lookup_valid(s01_axis_fw_lookup_valid),
-      .m01_axis_fw_lookup_ipAddr  (s01_axis_fw_lookup_ipAddr),
-      .m01_axis_fw_lookup_udpPort  (s01_axis_fw_lookup_udpPort),
-      .m01_axis_fw_lookup_ready(s01_axis_fw_lookup_ready),
+      .m01_axis_fw_lookup_valid  (s01_axis_fw_lookup_valid),
+      .m01_axis_fw_lookup_ipAddr (s01_axis_fw_lookup_ipAddr),
+      .m01_axis_fw_lookup_udpPort(s01_axis_fw_lookup_udpPort),
+      .m01_axis_fw_lookup_ready  (s01_axis_fw_lookup_ready),
 
       .s01_axis_fw_lookup_ready(m01_axis_fw_lookup_ready),
       .s01_axis_fw_lookup_valid(m01_axis_fw_lookup_valid),

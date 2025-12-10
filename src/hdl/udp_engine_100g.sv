@@ -218,8 +218,10 @@ module udp_engine_100g #(
   ) xpm_cdc_array_single_inst_ctrl_RX (
       .dest_out({rx_engine_enable, rx_engine_bypass, rx_internal_loopback}),
       .dest_clk(rx_axis_aclk),
-      .src_clk (),
-      .src_in  ({csr_udp_engine_100g__ctrl[1], csr_udp_engine_100g__ctrl[2], csr_udp_engine_100g__ctrl[3]})
+      .src_clk(),
+      .src_in({
+        csr_udp_engine_100g__ctrl[1], csr_udp_engine_100g__ctrl[2], csr_udp_engine_100g__ctrl[3]
+      })
   );
 
   // -------------------------------------------------------------------------
@@ -477,11 +479,11 @@ module udp_engine_100g #(
   // -------------------------------------------------------------------------
   ethernet_rx #(
       .DATA_WIDTH(DATA_WIDTH),
-      .CONN_ID_WIDTH(CONN_ID_WIDTH),
+      .CONN_ID_WIDTH(CONN_ID_WIDTH)
   ) ethernet_rx_unit (
       .rx_axis_aclk(rx_axis_aclk),
       .rx_axis_aresetn(rx_axis_aresetn),
-	    .rx_internal_loopback(rx_internal_loopback),
+      .rx_internal_loopback(rx_internal_loopback),
 
       .my_config_dst_ipAddr (rx_config_src_ipAddr),
       .my_config_dst_macAddr(rx_config_src_macAddr),
