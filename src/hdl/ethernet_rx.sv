@@ -15,31 +15,15 @@
 // ============================================================================
 
 module ethernet_rx #(
-    parameter int DATA_WIDTH         = 512,
-    parameter int CONN_ID_WIDTH      = 18,
-    parameter int IP_UDP_DSCP        = 0,
-    parameter int IP_UDP_ENC         = 0,
-    parameter int IP_UDP_IDEN        = 0,
-    parameter int IP_UDP_FLAGS       = 0,
-    parameter int IP_UDP_FRAG_OFFSET = 0,
-    parameter int IP_UDP_TTL         = 64,
-
-    localparam int IP_ADDR_WIDTH = 32,
-    localparam int MAC_ADDR_WIDTH = 48,
-    localparam int UDP_PORT_WIDTH = 16,
-    localparam int CONNECTION_METADATA_WIDTH = IP_ADDR_WIDTH + MAC_ADDR_WIDTH + UDP_PORT_WIDTH + 8,
-    localparam int IP_PACKET_LENGTH_WIDTH = 16,
-    localparam int ETH_HEADER_BYTES = 14,
-    localparam int IP_HEADER_BYTES = 20,
-    localparam int UDP_HEADER_BYTES = 8,
-    localparam int TOTAL_HEADERS_BYTES = ETH_HEADER_BYTES + IP_HEADER_BYTES + UDP_HEADER_BYTES,
-    localparam int TOTAL_HEADERS_BITS = TOTAL_HEADERS_BYTES * 8
+    parameter int DATA_WIDTH    = 512,
+    parameter int CONN_ID_WIDTH
 ) (
     // ----------------------------------------------------------------
     // CONTROL AND STATUS
     // ----------------------------------------------------------------
     input wire rx_axis_aclk,
     input wire rx_axis_aresetn,
+    input wire rx_internal_loopback,
     // input wire                          rx_engine_bypass,
     // input wire                          rx_engine_enable,
 

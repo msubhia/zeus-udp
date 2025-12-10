@@ -477,20 +477,15 @@ module udp_engine_100g #(
   ethernet_rx #(
       .DATA_WIDTH(DATA_WIDTH),
       .CONN_ID_WIDTH(CONN_ID_WIDTH),
-      .IP_UDP_DSCP(IP_UDP_DSCP),
-      .IP_UDP_ENC(IP_UDP_ENC),
-      .IP_UDP_IDEN(IP_UDP_IDEN),
-      .IP_UDP_FLAGS(IP_UDP_FLAGS),
-      .IP_UDP_FRAG_OFFSET(IP_UDP_FRAG_OFFSET),
-      .IP_UDP_TTL(IP_UDP_TTL)
   ) ethernet_rx_unit (
       .rx_axis_aclk(rx_axis_aclk),
       .rx_axis_aresetn(rx_axis_aresetn),
+	  .rx_internal_loopback(rx_internal_loopback),
 
-      .my_config_dst_ipAddr (tx_config_src_ipAddr),
-      .my_config_dst_macAddr(tx_config_src_macAddr),
-      .my_config_dst_udpPort(tx_config_src_udpPort),
-      .my_config_src_macAddr(tx_config_dst_macAddr),
+      .my_config_dst_ipAddr (rx_config_src_ipAddr),
+      .my_config_dst_macAddr(rx_config_src_macAddr),
+      .my_config_dst_udpPort(rx_config_src_udpPort),
+      .my_config_src_macAddr(rx_config_dst_macAddr),
 
       // Slave port s00 from CMAC
       .cmac_rx_axis_tready(cmac_rx_axis_treadyp),
