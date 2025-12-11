@@ -1,0 +1,128 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2025.1 (lin64) Build 6140274 Wed May 21 22:58:25 MDT 2025
+| Date         : Wed Nov 12 16:42:54 2025
+| Host         : eecs-digital-47 running 64-bit Ubuntu 24.04.3 LTS
+| Command      : upgrade_ip
+| Device       : xczu48dr-ffvg1517-2-e
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Upgrade Log for IP 'design_1_cmac_bringup_0_0'
+
+1. Summary
+----------
+
+CAUTION (success, with warnings) in the upgrade of design_1_cmac_bringup_0_0 (user.org:user:cmac_bringup:1.0) from (Rev. 4) to (Rev. 5)
+
+After upgrade, an IP may have parameter and port differences compared to the original customization. Please review the parameters within the IP customization GUI to ensure proper functionality. Also, please review the updated IP instantiation template to ensure proper connectivity, and update your design if required.
+
+2. Connection Warnings
+----------------------
+
+Detected external port differences while upgrading 'design_1_cmac_bringup_0_0'. These changes may impact your design.
+
+
+-Upgrade has removed port 'm00_axi_sreset'
+
+-Upgrade has added port 'm00_axi_aresetn'
+
+
+
+
+
+
+
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2025.1 (lin64) Build 6140274 Wed May 21 22:58:25 MDT 2025
+| Date         : Wed Nov 12 16:08:59 2025
+| Host         : eecs-digital-47 running 64-bit Ubuntu 24.04.3 LTS
+| Command      : upgrade_ip
+| Device       : xczu48dr-ffvg1517-2-e
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Upgrade Log for IP 'design_1_cmac_bringup_0_0'
+
+1. Summary
+----------
+
+CAUTION (success, with warnings) in the upgrade of design_1_cmac_bringup_0_0 (user.org:user:cmac_bringup:1.0) from (Rev. 3) to (Rev. 4)
+
+After upgrade, an IP may have parameter and port differences compared to the original customization. Please review the parameters within the IP customization GUI to ensure proper functionality. Also, please review the updated IP instantiation template to ensure proper connectivity, and update your design if required.
+
+2. Connection Warnings
+----------------------
+
+Detected external port differences while upgrading 'design_1_cmac_bringup_0_0'. These changes may impact your design.
+
+
+-Upgrade has removed port 'm00_axi_aresetn'
+
+-Upgrade has added port 'm00_axi_sreset'
+
+
+
+
+
+
+
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2025.1 (lin64) Build 6140274 Wed May 21 22:58:25 MDT 2025
+| Date         : Wed Nov 12 16:07:26 2025
+| Host         : eecs-digital-47 running 64-bit Ubuntu 24.04.3 LTS
+| Command      : upgrade_ip
+| Device       : xczu48dr-ffvg1517-2-e
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Upgrade Log for IP 'design_1_cmac_bringup_0_0'
+
+1. Summary
+----------
+
+SUCCESS in the upgrade of design_1_cmac_bringup_0_0 (user.org:user:cmac_bringup:1.0) from (Rev. 2) to (Rev. 3)
+
+
+
+
+
+
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2025 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2025.1 (lin64) Build 6140274 Wed May 21 22:58:25 MDT 2025
+| Date         : Wed Nov 12 16:04:25 2025
+| Host         : eecs-digital-47 running 64-bit Ubuntu 24.04.3 LTS
+| Command      : upgrade_ip
+| Device       : xczu48dr-ffvg1517-2-e
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+Upgrade Log for IP 'design_1_cmac_bringup_0_0'
+
+1. Summary
+----------
+
+CAUTION (success, with warnings) in the upgrade of design_1_cmac_bringup_0_0 (user.org:user:cmac_bringup:1.0) from (Rev. 1) to (Rev. 2)
+
+After upgrade, an IP may have parameter and port differences compared to the original customization. Please review the parameters within the IP customization GUI to ensure proper functionality. Also, please review the updated IP instantiation template to ensure proper connectivity, and update your design if required.
+
+2. Connection Warnings
+----------------------
+
+Detected external port differences while upgrading 'design_1_cmac_bringup_0_0'. These changes may impact your design.
+
+
+-Upgrade has removed port 'm00_axi_error'
+
+-Upgrade has removed port 'm00_axi_init_axi_txn'
+
+-Upgrade has removed port 'm00_axi_txn_done'
+
+-Upgrade has added port 'err_out'
+
+-Upgrade has added port 'rx_aligned'
+
+-Upgrade has added port 'success_out'
+
+-Upgrade has added port 'trigger_bring_up_seq'
+
+

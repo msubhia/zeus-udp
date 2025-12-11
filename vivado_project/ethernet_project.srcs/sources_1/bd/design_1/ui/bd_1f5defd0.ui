@@ -1,0 +1,78 @@
+{
+   "ActiveEmotionalView":"Default View",
+   "Default View_ScaleFactor":"0.71144",
+   "Default View_TopLeft":"988,-79",
+   "ExpandedHierarchyInLayout":"",
+   "guistr":"# # String gsaved with Nlview 7.8.0 2024-04-26 e1825d835c VDI=44 GEI=38 GUI=JA:21.0 TLS
+#  -string -flagsOSRD
+preplace port gt_rtl -pg 1 -lvl 9 -x 4100 -y 1010 -defaultsOSRD
+preplace port diff_clock_rtl -pg 1 -lvl 0 -x 0 -y 1020 -defaultsOSRD
+preplace inst zynq_ultra_ps_e_0 -pg 1 -lvl 5 -x 1820 -y 900 -defaultsOSRD
+preplace inst smartconnect_0 -pg 1 -lvl 6 -x 2400 -y 920 -defaultsOSRD
+preplace inst disable_0 -pg 1 -lvl 6 -x 2400 -y 1090 -defaultsOSRD
+preplace inst rx_dma -pg 1 -lvl 4 -x 1260 -y 720 -defaultsOSRD
+preplace inst axis_dwidth_converter_0 -pg 1 -lvl 3 -x 840 -y 690 -defaultsOSRD
+preplace inst axis_data_fifo_1 -pg 1 -lvl 2 -x 520 -y 650 -defaultsOSRD
+preplace inst cmac_usplus_0 -pg 1 -lvl 7 -x 3020 -y 1200 -defaultsOSRD
+preplace inst proc_sys_reset_0 -pg 1 -lvl 5 -x 1820 -y 1150 -defaultsOSRD
+preplace inst ilvector_logic_0 -pg 1 -lvl 1 -x 170 -y 800 -defaultsOSRD
+preplace inst tx_dma -pg 1 -lvl 4 -x 1260 -y 910 -defaultsOSRD
+preplace inst ilvector_logic_1 -pg 1 -lvl 3 -x 840 -y 940 -defaultsOSRD
+preplace inst frame_padding_0 -pg 1 -lvl 6 -x 2400 -y 470 -defaultsOSRD
+preplace inst axis_dwidth_converter_1 -pg 1 -lvl 5 -x 1820 -y 630 -defaultsOSRD
+preplace inst udp_engine_100g_ip -pg 1 -lvl 7 -x 3020 -y 640 -defaultsOSRD
+preplace inst ila_1 -pg 1 -lvl 8 -x 3980 -y 610 -defaultsOSRD
+preplace netloc axis_data_fifo_1_s_axis_tready 1 1 7 360 260 NJ 260 NJ 260 NJ 260 NJ 260 N 260 3390
+preplace netloc axis_dwidth_converter_1_m_axis_tdata 1 5 2 2120 610 2730J
+preplace netloc axis_dwidth_converter_1_m_axis_tkeep 1 5 2 2140 620 NJ
+preplace netloc axis_dwidth_converter_1_m_axis_tlast 1 5 2 2230 640 NJ
+preplace netloc axis_dwidth_converter_1_m_axis_tvalid 1 5 2 2220 660 NJ
+preplace netloc cmac_usplus_0_gt_rxusrclk2 1 1 7 340 510 690 600 1060 600 1480 750 NJ 750 2740 390 3330
+preplace netloc cmac_usplus_0_gt_txusrclk2 1 3 5 1090 1000 1450 520 2230 600 2720 400 3260
+preplace netloc cmac_usplus_0_rx_axis_tdata 1 6 2 2760 350 3360
+preplace netloc cmac_usplus_0_rx_axis_tkeep 1 6 2 2770 360 3350
+preplace netloc cmac_usplus_0_rx_axis_tlast 1 6 2 2780 370 3340
+preplace netloc cmac_usplus_0_rx_axis_tvalid 1 6 2 2750 340 3410
+preplace netloc cmac_usplus_0_usr_rx_reset 1 0 8 20 860 NJ 860 NJ 860 1060J 820 1430J 770 NJ 770 2680J 880 3250
+preplace netloc cmac_usplus_0_usr_tx_reset 1 2 6 690 1010 NJ 1010 1500J 780 NJ 780 2600J 890 3270
+preplace netloc disable_0_dout 1 6 1 2640 1090n
+preplace netloc frame_padding_0_S_AXIS_TREADY 1 5 3 2180 300 2600J 270 3300
+preplace netloc ilvector_logic_0_Res 1 1 6 320 520 670 610 1030 610 1460J 760 NJ 760 2710
+preplace netloc ilvector_logic_1_Res 1 3 4 1050 620 1510 740 2210 740 2700J
+preplace netloc proc_sys_reset_0_peripheral_aresetn 1 5 2 2230 820 NJ
+preplace netloc proc_sys_reset_0_peripheral_reset 1 5 2 N 1150 2650
+preplace netloc udp_engine_100g_ip_udp_rx_axis_tdata 1 1 7 370 280 NJ 280 NJ 280 NJ 280 NJ 280 N 280 3310
+preplace netloc udp_engine_100g_ip_udp_rx_axis_tkeep 1 1 7 330 240 NJ 240 NJ 240 NJ 240 NJ 240 N 240 3380
+preplace netloc udp_engine_100g_ip_udp_rx_axis_tvalid 1 1 7 350 250 NJ 250 NJ 250 NJ 250 NJ 250 N 250 3400
+preplace netloc udp_engine_100g_ip_udp_tx_axis_tready 1 5 2 2130 630 2790J
+preplace netloc udp_engine_100g_wrap_0_cmac_tx_axis_tdata 1 5 3 2190 310 2630J 300 3250
+preplace netloc udp_engine_100g_wrap_0_cmac_tx_axis_tkeep 1 5 3 2210 320 2640J 310 3270
+preplace netloc udp_engine_100g_wrap_0_cmac_tx_axis_tlast 1 5 3 2220 330 2660J 320 3280
+preplace netloc udp_engine_100g_wrap_0_cmac_tx_axis_tvalid 1 5 3 2230 340 2680J 330 3290
+preplace netloc zynq_ultra_ps_e_0_pl_clk0 1 3 4 1070 1030 1510 790 2150 800 2670
+preplace netloc zynq_ultra_ps_e_0_pl_resetn0 1 4 2 1520 1010 2120
+preplace netloc udp_engine_100g_ip_udp_rx_axis_tlast 1 1 7 380 290 NJ 290 NJ 290 NJ 290 NJ 290 N 290 3320
+preplace netloc udp_engine_100g_ip_cmac_rx_axis_tready 1 6 2 2790 380 3370
+preplace netloc axi_dma_0_M_AXI_S2MM 1 4 1 1440 700n
+preplace netloc axi_dma_1_M_AXIS_MM2S 1 4 1 1470 610n
+preplace netloc axi_dma_1_M_AXI_MM2S 1 4 1 1490 870n
+preplace netloc axis_data_fifo_1_M_AXIS 1 2 1 680 650n
+preplace netloc axis_dwidth_converter_0_M_AXIS 1 3 1 1040 690n
+preplace netloc cmac_usplus_0_gt_serial_port 1 7 2 N 1010 N
+preplace netloc diff_clock_rtl_1 1 0 7 NJ 1020 NJ 1020 NJ 1020 NJ 1020 NJ 1020 NJ 1020 NJ
+preplace netloc frame_padding_0_M_AXIS 1 6 1 2690 470n
+preplace netloc smartconnect_0_M00_AXI 1 6 1 2590 890n
+preplace netloc smartconnect_0_M01_AXI 1 3 4 1080 230 NJ 230 NJ 230 2580
+preplace netloc smartconnect_0_M02_AXI 1 3 4 1090 270 NJ 270 NJ 270 2570
+preplace netloc smartconnect_0_M03_AXI 1 6 1 2790 700n
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM0_FPD 1 5 1 2130 870n
+preplace netloc zynq_ultra_ps_e_0_M_AXI_HPM1_FPD 1 5 1 N 890
+levelinfo -pg 1 0 170 520 840 1260 1820 2400 3020 3980 4100
+pagesize -pg 1 -db -bbox -sgen -140 0 4190 1540
+"
+}
+{
+   "da_board_cnt":"7",
+   "da_clkrst_cnt":"1",
+   "da_zynq_ultra_ps_e_cnt":"1"
+}
