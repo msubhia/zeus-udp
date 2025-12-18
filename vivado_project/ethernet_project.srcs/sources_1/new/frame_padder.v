@@ -1,3 +1,5 @@
+copied from https://github.com/Xilinx/xup_vitis_network_example/blob/3566a7377c9c4eda4a58f7d1e9075a5decfdc30b/Ethernet/src/frame_padding.v
+
 /************************************************
 Copyright (c) 2021, Xilinx, Inc.
 All rights reserved.
